@@ -72,7 +72,7 @@ m:addOverride('xi.actions.weaponskills.flat_blade.onUseWeaponSkill', function(pl
     local damage, criticalHit, tpHits, extraHits = xi.weaponskills.doPhysicalWeaponskill(player, target, wsID, params, tp, action, primary, taChar)
 
     -- Handle status effect
-    if math.random(1, 100) <= xi.weaponskills.fTP(tp, { 50, 75, 100 }) then
+    if math.randomInt(1, 100) <= xi.weaponskills.fTP(tp, { 50, 75, 100 }) then
         local effectId      = xi.effect.STUN
         local actionElement = xi.element.THUNDER
         local power         = 1
@@ -166,8 +166,8 @@ m:addOverride('xi.actions.weaponskills.spirits_within.onUseWeaponSkill', functio
 
     local damage = dmg
     damage = math.floor(damage * xi.combat.damage.calculateDamageAdjustment(target, false, false, false, true))
-    damage = math.floor(damage * xi.spells.damage.calculateAbsorption(target, xi.element.NONE, false))
-    damage = math.floor(damage * xi.spells.damage.calculateNullification(target, xi.element.NONE, false, true))
+    damage = math.floor(damage * xi.spells.damage.calculateAbsorption(target, xi.element.NONE, false, false, false, true))
+    damage = math.floor(damage * xi.spells.damage.calculateNullification(target, xi.element.NONE, false, false, false, true))
     damage = math.floor(target:handleSevereDamage(damage, false))
 
     if damage > 0 then
@@ -304,8 +304,8 @@ m:addOverride('xi.actions.weaponskills.atonement.onUseWeaponSkill', function(pla
     -- This is here to account for damage adjustments needed because it is breath damage.
     damage = dmg
     damage = math.floor(damage * xi.combat.damage.calculateDamageAdjustment(target, false, false, false, true))
-    damage = math.floor(damage * xi.spells.damage.calculateAbsorption(target, xi.element.NONE, false))
-    damage = math.floor(damage * xi.spells.damage.calculateNullification(target, xi.element.NONE, false, true))
+    damage = math.floor(damage * xi.spells.damage.calculateAbsorption(target, xi.element.NONE, false, false, false, true))
+    damage = math.floor(damage * xi.spells.damage.calculateNullification(target, xi.element.NONE, false, false, false, true))
     damage = math.floor(target:handleSevereDamage(damage, false))
 
     if player:getMod(xi.mod.WEAPONSKILL_DAMAGE_BASE + wsID) > 0 then
@@ -354,7 +354,7 @@ m:addOverride('xi.actions.weaponskills.death_blossom.onUseWeaponSkill', function
     local damage, criticalHit, tpHits, extraHits = xi.weaponskills.doPhysicalWeaponskill(player, target, wsID, params, tp, action, primary, taChar)
 
     -- Handle status effect
-    if math.random(1, 100) <= xi.weaponskills.fTP(tp, { 50, 75, 100 }) then
+    if math.randomInt(1, 100) <= xi.weaponskills.fTP(tp, { 50, 75, 100 }) then
         local effectId      = xi.effect.MAGIC_EVASION_DOWN
         local actionElement = xi.element.THUNDER
         local power         = 10

@@ -31,7 +31,6 @@
 #include "lua_base_entity.h"
 #include "lua_battlefield.h"
 #include "mob_modifier.h"
-#include "status_effect_container.h"
 #include "utils/mobutils.h"
 #include "utils/zoneutils.h"
 
@@ -550,7 +549,7 @@ void CLuaBattlefield::addGroups(const sol::table& groups, bool hasMultipleArenas
 
                 PMob->setMobMod(MOBMOD_ROAM_RESET_FACING, 1);
                 PMob->m_maxRoamDistance = 0.5f;
-                PMob->m_roamFlags |= ROAMFLAG_SCRIPTED;
+                PMob->m_roamFlags |= xi::RoamFlag::Scripted;
                 PMob->saveMobModifiers();
             }
         }

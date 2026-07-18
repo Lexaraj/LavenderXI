@@ -8,6 +8,8 @@ import fileinput
 import shutil
 import importlib
 import pathlib
+import socket
+import urllib.request
 
 import platform
 
@@ -839,18 +841,62 @@ def set_external_ip(ip_str):
     _ = db_query(query)
 
 
-def set_external_ip_dialog():
-    import urllib.request
+def find_local_network_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # No packets are actually sent; this just picks the interface the
+        # kernel would use to reach an external host.
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    finally:
+        s.close()
 
-    if input("Make server public-facing? [y/N] ").lower() == "y":
-        external_ip = urllib.request.urlopen("https://ident.me").read().decode("utf8")
-        print_green(f"Detected your public-facing IP as: {external_ip}")
-        if input("Is this correct? [y/N] ").lower() == "y":
-            set_external_ip(external_ip)
-        else:
-            external_ip = input("Please enter your public-facing IP: ")
-            if len(external_ip.strip()) > 0:
-                set_external_ip(external_ip)
+
+def find_public_ip():
+    return urllib.request.urlopen("https://ident.me").read().decode("utf8")
+
+
+def set_local_only_ip():
+    set_external_ip("127.0.0.1")
+
+
+def set_local_network_ip():
+    try:
+        detected_ip = find_local_network_ip()
+    except Exception as e:
+        print_red(f"Could not detect local network IP: {e}")
+        return
+    print_green(f"Detected your local network IP as: {detected_ip}")
+    set_external_ip(detected_ip)
+
+
+def set_public_ip():
+    try:
+        detected_ip = find_public_ip()
+    except Exception as e:
+        print_red(f"Could not detect public IP: {e}")
+        return
+    print_green(f"Detected your public-facing IP as: {detected_ip}")
+    set_external_ip(detected_ip)
+
+
+def set_manual_ip():
+    external_ip = input("Please enter the zone IP: ")
+    if len(external_ip.strip()) > 0:
+        set_external_ip(external_ip.strip())
+
+
+def set_external_ip_dialog():
+    present_menu(
+        "Set Zone IP Addresses",
+        {
+            "1": ["Local only (127.0.0.1)", set_local_only_ip],
+            "2": ["Local network (auto-detect LAN IP)", set_local_network_ip],
+            "3": ["Public IP (via ident.me)", set_public_ip],
+            "m": ["Manual entry", set_manual_ip],
+            "q": ["Quit to tasks menu", NOOP],
+        },
+    )
 
 
 def print_db_tables_by_size():
@@ -963,6 +1009,89 @@ def offload_to_auction_house_history():
 
     print("Number of rows in auction_house_history (after):")
     print(db_query("SELECT COUNT(*) FROM auction_house_history;").stdout)
+
+
+def resolve_charid(charname):
+    cur.execute("SELECT charid FROM chars WHERE charname = ?", (charname,))
+    row = cur.fetchone()
+    if row is None:
+        print_red(f'No character found with name "{charname}".')
+        return None
+
+    return row[0]
+
+
+def flag_character_for_rename(charname):
+    if not cur and connect() == False:
+        return
+
+    charid = resolve_charid(charname)
+    if charid is None:
+        return
+
+    cur.execute(
+        "INSERT INTO char_flags (charid, `rename`) VALUES (?, 1) "
+        "ON DUPLICATE KEY UPDATE `rename` = 1",
+        (charid,),
+    )
+    db.commit()
+    print_green(f'Flagged "{charname}" (charid {charid}) for a forced rename at next login.')
+
+
+def flag_character_for_race_change(charname):
+    if not cur and connect() == False:
+        return
+
+    charid = resolve_charid(charname)
+    if charid is None:
+        return
+
+    expiry = int(time.time()) + 1209600  # 14 days
+    cur.execute(
+        "INSERT INTO char_vars (charid, varname, value, expiry) "
+        "VALUES (?, '[RaceChange]Eligible', ?, ?) "
+        "ON DUPLICATE KEY UPDATE value = VALUES(value), expiry = VALUES(expiry)",
+        (charid, expiry, expiry),
+    )
+    cur.execute(
+        "INSERT INTO char_vars (charid, varname, value, expiry) "
+        "VALUES (?, '[RaceChange]Last', 0, 0) "
+        "ON DUPLICATE KEY UPDATE value = 0, expiry = 0",
+        (charid,),
+    )
+    db.commit()
+    print_green(f'Made "{charname}" (charid {charid}) race change eligible for 14 days.')
+
+
+def flag_character_dialog(question, fn):
+    charname = input(question + "\n> ").strip()
+    if not charname:
+        bad_selection()
+        return
+
+    fn(charname)
+
+
+def flag_character_for_rename_dialog():
+    flag_character_dialog("Which character to flag for a forced rename?", flag_character_for_rename)
+
+
+def flag_character_for_race_change_dialog():
+    flag_character_dialog("Which character to make race change eligible?", flag_character_for_race_change)
+
+
+def player_admin_menu():
+    if not cur:
+        connect()
+
+    present_menu(
+        "Player Administration",
+        {
+            "1": ["Flag character for forced rename", flag_character_for_rename_dialog],
+            "2": ["Grant character race change eligibility", flag_character_for_race_change_dialog],
+            "q": ["Quit to main menu", NOOP],
+        },
+    )
 
 
 def announce_menu():
@@ -1410,6 +1539,7 @@ def main():
                 "4": ["Restore/Import", restore_backup],
                 "r": ["Reset DB", reset_db],
                 "t": ["Maintenance Tasks", tasks_menu],
+                "p": ["Player Administration", player_admin_menu],
                 "l": ["Launch Server", launch_using_zone_settings],
                 "s": ["Settings", settings_menu],
                 "q": ["Quit", close],

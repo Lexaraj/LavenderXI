@@ -29,7 +29,7 @@ entity.onMobSpawn = function(mob)
 
     -- Sky gods wait 10 seconds after spawning to start casting
     mob:setMagicCastingEnabled(false)
-    mob:timer(math.random(5000, 10000), function(mobArg)
+    mob:timer(math.randomInt(5000, 10000), function(mobArg)
         if mobArg then
             mobArg:setMagicCastingEnabled(true)
         end
@@ -41,6 +41,13 @@ entity.onMobSpawn = function(mob)
             mobArg:setMobAbilityEnabled(true)
         end
     end)
+
+    xi.mix.jobSpecial.config(mob, {
+        specials =
+        {
+            { id = xi.mobSkill.HUNDRED_FISTS_1, hpp = math.random(50, 60) },
+        },
+    })
 end
 
 entity.onMobFight = function(mob, target)

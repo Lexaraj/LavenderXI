@@ -23,15 +23,12 @@
 
 #include "ability.h"
 #include "ai/ai_container.h"
-#include "ai/states/death_state.h"
-#include "ai/states/inactive_state.h"
 #include "entities/char_entity.h"
 #include "items/item_weapon.h"
 #include "latent_effect_container.h"
 #include "packets/s2c/0x029_battle_message.h"
 #include "packets/s2c/0x058_assist.h"
 #include "recast_container.h"
-#include "roe.h"
 #include "status_effect_container.h"
 #include "utils/battleutils.h"
 #include "utils/charutils.h"
@@ -217,7 +214,7 @@ bool CPlayerController::WeaponSkill(uint16 targid, uint16 wsid)
             return false;
         }
 
-        if (PWeaponSkill->getType() == SKILL_ARCHERY || PWeaponSkill->getType() == SKILL_MARKSMANSHIP)
+        if (static_cast<xi::SkillType>(PWeaponSkill->getType()) == xi::SkillType::Archery || static_cast<xi::SkillType>(PWeaponSkill->getType()) == xi::SkillType::Marksmanship)
         {
             auto* PItem  = dynamic_cast<CItemWeapon*>(PChar->getEquip(SLOT_AMMO));
             auto* weapon = dynamic_cast<CItemWeapon*>(PChar->m_Weapons[SLOT_RANGED]);

@@ -26,7 +26,6 @@
 #include "entities/char_entity.h"
 #include "entities/mob_entity.h"
 #include "packets/s2c/0x0f9_res.h"
-#include "status_effect.h"
 #include "status_effect_container.h"
 
 namespace
@@ -67,7 +66,7 @@ bool CDeathState::Update(timer::time_point tick)
             {
                 auto* PMob = dynamic_cast<CMobEntity*>(m_PEntity);
                 // RAISABLE mobs should stay in death state indefinitely until raised
-                if (PMob && (PMob->m_Behavior & BEHAVIOR_RAISABLE))
+                if (PMob && ((PMob->m_Behavior & xi::Behavior::Raisable) != xi::Behavior::None))
                 {
                     return false;
                 }

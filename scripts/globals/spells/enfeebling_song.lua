@@ -2,10 +2,6 @@
 -- Enfeebling Song Utilities
 -- Used for songs that deal negative status effects upon targets.
 -----------------------------------
-require('scripts/globals/combat/magic_hit_rate')
-require('scripts/globals/jobpoints')
-require('scripts/globals/magicburst')
------------------------------------
 xi = xi or {}
 xi.spells = xi.spells or {}
 xi.spells.enfeebling = xi.spells.enfeebling or {}
@@ -228,8 +224,11 @@ xi.spells.enfeebling.useEnfeeblingSong = function(caster, target, spell)
 
     -- Virelai applies a charm. Quit early.
     elseif spellEffect == xi.effect.CHARM_I then
-        target:addStatusEffect(xi.effect.CHARM_I, { duration = duration, origin = caster })
-        caster:charm(target)
+        -- Should be tracking status effect here with : target:addStatusEffect(xi.effect.CHARM_I, { duration = duration, origin = caster })
+        -- Currently when applied it disables the mobs AI.
+        caster:charm(target, duration)
+        -- Makes charmed mob act as a bodyguard, like avatars.
+        target:setMobMod(xi.mobMod.BODYGUARD, 1)
         if caster:isPC() then
             spell:setMsg(xi.msg.basic.MAGIC_ENFEEB)
         else
@@ -243,8 +242,8 @@ xi.spells.enfeebling.useEnfeeblingSong = function(caster, target, spell)
     -- STEP 5: Attempt to apply the status effect. Check for magic burst.
     ------------------------------
     if target:addStatusEffect(spellEffect, { power = power, duration = duration, origin = caster, tick = tick, subPower = subEffect, tier = spellTier }) then
-        local _, skillchainCount = xi.magicburst.formMagicBurst(target, spellElement)
-        if skillchainCount > 0 then
+        local magicBurstTier = xi.combat.magicBurst.getMagicBurstTier(target, spellElement)
+        if magicBurstTier > 0 then
             spell:setMsg(xi.msg.basic.MAGIC_BURST_ENFEEB)
             caster:triggerRoeEvent(xi.roeTrigger.MAGIC_BURST)
         else

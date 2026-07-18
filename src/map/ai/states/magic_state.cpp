@@ -96,6 +96,13 @@ CMagicState::CMagicState(CBattleEntity* PEntity, uint16 targid, SpellID spellid,
     m_castTime = battleutils::CalculateSpellCastTime(m_PEntity, this);
     m_startPos = m_PEntity->loc.p;
 
+    auto targetID = PTarget->id;
+
+    if (m_PEntity->objtype != TYPE_PC && settings::get<bool>("map.HIDE_READIES_TARGET"))
+    {
+        targetID = m_PEntity->id;
+    }
+
     action_t action{
         .actorId    = m_PEntity->id,
         .actiontype = ActionCategory::MagicStart,
@@ -103,7 +110,7 @@ CMagicState::CMagicState(CBattleEntity* PEntity, uint16 targid, SpellID spellid,
         .spellgroup = m_PSpell->getSpellGroup(),
         .targets    = {
             {
-                .actorId = PTarget->id,
+                .actorId = targetID,
                 .results = {
                     {
                         .param     = static_cast<int32_t>(m_PSpell->getID()),
@@ -170,6 +177,14 @@ bool CMagicState::Update(timer::time_point tick)
 
             Complete();
             return false;
+        }
+
+        auto& PSpell = m_PSpell;
+
+        // Bard songs do not get interrupted here
+        if (PSpell && PSpell->getSpellGroup() != SPELLGROUP_SONG && m_PEntity->StatusEffectContainer->HasPreventActionEffect())
+        {
+            m_interrupted = true;
         }
     }
 
@@ -254,13 +269,9 @@ bool CMagicState::Update(timer::time_point tick)
         }
 
         // Slept/stunned/petrified/etc. at the moment of completion: the cast is interrupted.
-        // A prevent-action effect that lands mid-cast does not cancel the cast on retail;
-        // the interrupt is decided here, at the finish, mirroring CMobSkillState.
         if (m_PEntity->StatusEffectContainer->HasPreventActionEffect())
         {
-            m_PEntity->OnCastInterrupted(*this, action, msg, false);
-            Complete();
-            return false;
+            m_interrupted = true;
         }
 
         if (m_interrupted)
@@ -415,7 +426,7 @@ bool CMagicState::CanCastSpell(CBattleEntity* PTarget, bool isEndOfCast)
         }
     }
 
-    if (!isEndOfCast && m_PEntity->objtype == TYPE_PC && m_PEntity->loc.zone->CanUseMisc(MISC_LOS_PLAYER_BLOCK) && !m_PEntity->CanSeeTarget(PTarget))
+    if (!isEndOfCast && m_PEntity->objtype == TYPE_PC && m_PEntity->loc.zone->CanUseMisc(xi::ZoneMisc::LosPlayerBlock) && !m_PEntity->CanSeeTarget(PTarget))
     {
         m_errorMsg = std::make_unique<GP_SERV_COMMAND_BATTLE_MESSAGE>(m_PEntity, PTarget, static_cast<uint16>(m_PSpell->getID()), 0, MsgBasic::CannotPerformAction);
         return false;
@@ -524,7 +535,7 @@ void CMagicState::ApplyEnmity(CBattleEntity* PTarget, int ce, int ve)
         ve = 480;
     }
 
-    if (m_PEntity->StatusEffectContainer->HasStatusEffect(xi::StatusEffect::DivineEmblem) && m_PSpell->getSkillType() == SKILL_DIVINE_MAGIC)
+    if (m_PEntity->StatusEffectContainer->HasStatusEffect(xi::StatusEffect::DivineEmblem) && m_PSpell->getSkillType() == xi::SkillType::DivineMagic)
     {
         ve = ve * (1.0f + (m_PEntity->StatusEffectContainer->GetStatusEffect(xi::StatusEffect::DivineEmblem)->GetPower() / 100.0f));
         ce = ce * (1.0f + (m_PEntity->StatusEffectContainer->GetStatusEffect(xi::StatusEffect::DivineEmblem)->GetPower() / 100.0f));
@@ -600,7 +611,7 @@ void CMagicState::ApplyEnmity(CBattleEntity* PTarget, int ce, int ve)
     }
 
     if (m_PEntity->StatusEffectContainer->HasStatusEffect(xi::StatusEffect::DivineEmblem) &&
-        m_PSpell->getSkillType() == SKILL_DIVINE_MAGIC &&
+        m_PSpell->getSkillType() == xi::SkillType::DivineMagic &&
         enmityApplied)
     {
         m_PEntity->StatusEffectContainer->DelStatusEffect(xi::StatusEffect::DivineEmblem);

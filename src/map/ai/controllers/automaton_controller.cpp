@@ -26,6 +26,8 @@
 #include "ai/states/magic_state.h"
 #include "ai/states/weaponskill_state.h"
 #include "common/database.h"
+#include "common/types/flat_hash_map.h"
+#include "common/types/hash_map.h"
 #include "common/utils.h"
 #include "enmity_container.h"
 #include "entities/trust_entity.h"
@@ -47,7 +49,7 @@ CAutomatonController::CAutomatonController(CAutomatonEntity* PPet)
     setCooldowns();
     if (shouldStandBack())
     {
-        PAutomaton->m_Behavior |= BEHAVIOR_STANDBACK;
+        PAutomaton->m_Behavior |= xi::Behavior::Standback;
     }
 }
 
@@ -237,7 +239,7 @@ void CAutomatonController::Move()
     if ((shouldStandBack() && !isWithinDistance(PAutomaton->loc.p, PTarget->loc.p, 15.0f)) ||
         (PAutomaton->health.mp < 8 && PAutomaton->health.maxmp > 8))
     {
-        PAutomaton->m_Behavior &= ~BEHAVIOR_STANDBACK;
+        PAutomaton->m_Behavior &= ~xi::Behavior::Standback;
     }
 
     CPetController::Move();
@@ -1497,11 +1499,11 @@ auto CAutomatonController::TryTPMove() -> bool
         std::vector<CMobSkill*> validSkills;
 
         // load the skills that the automaton has access to with it's skill
-        SKILLTYPE skilltype = SKILL_AUTOMATON_MELEE;
+        xi::SkillType skilltype = xi::SkillType::AutomatonMelee;
 
         if (PAutomaton->frame() == AutomatonFrame::Sharpshot)
         {
-            skilltype = SKILL_AUTOMATON_RANGED;
+            skilltype = xi::SkillType::AutomatonRanged;
         }
 
         for (auto skillid : FrameSkills)
@@ -1650,7 +1652,7 @@ auto CAutomatonController::Disengage() -> bool
     PTarget = nullptr;
     if (shouldStandBack())
     {
-        PAutomaton->m_Behavior |= BEHAVIOR_STANDBACK;
+        PAutomaton->m_Behavior |= xi::Behavior::Standback;
     }
     return CMobController::Disengage();
 }
@@ -1658,9 +1660,9 @@ auto CAutomatonController::Disengage() -> bool
 namespace automaton
 {
 
-std::unordered_map<SpellID, AutomatonSpell, EnumClassHash> autoSpellList;
-std::vector<SpellID>                                       naSpells;
-std::unordered_map<uint16, AutomatonAbility>               autoAbilityList;
+FlatHashMap<SpellID, AutomatonSpell, EnumClassHash> autoSpellList;
+std::vector<SpellID>                                naSpells;
+HashMap<uint16, AutomatonAbility>                   autoAbilityList;
 
 void LoadAutomatonSpellList()
 {
@@ -1675,7 +1677,7 @@ void LoadAutomatonSpellList()
                 .skilllevel = rset->get<uint16>("skilllevel"),
                 .heads      = rset->get<uint8>("heads"),
                 .enfeeble   = rset->get<xi::StatusEffect>("enfeeble"),
-                .immunity   = rset->get<IMMUNITY>("immunity"),
+                .immunity   = rset->get<xi::Immunity>("immunity"),
                 .removes    = {}, // Will handle in a moment
             };
 
@@ -1699,7 +1701,7 @@ void LoadAutomatonSpellList()
 bool CanUseSpell(CAutomatonEntity* PCaster, SpellID spellid)
 {
     const AutomatonSpell& PSpell = autoSpellList[spellid];
-    return ((PCaster->GetSkill(SKILL_AUTOMATON_MAGIC) >= PSpell.skilllevel) && (PSpell.heads & (1 << ((uint8)PCaster->head() - 1))));
+    return ((PCaster->GetSkill(xi::SkillType::AutomatonMagic) >= PSpell.skilllevel) && (PSpell.heads & (1 << ((uint8)PCaster->head() - 1))));
 }
 
 bool CanUseEnfeeble(CBattleEntity* PTarget, SpellID spell)

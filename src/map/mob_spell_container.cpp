@@ -21,6 +21,8 @@
 
 #include <algorithm>
 
+#include "entities/pet_entity.h"
+
 #include "mob_modifier.h"
 #include "mob_spell_container.h"
 #include "recast_container.h"
@@ -110,7 +112,7 @@ void CMobSpellContainer::RemoveSpell(SpellID spellId)
 {
     auto findAndRemove = [](std::vector<SpellID>& list, SpellID id)
     {
-        list.erase(std::remove(list.begin(), list.end(), id), list.end());
+        std::erase(list, id);
     };
 
     findAndRemove(m_gaList, spellId);
@@ -130,11 +132,11 @@ Maybe<SpellID> CMobSpellContainer::GetAvailable(SpellID spellId)
 {
     auto* spell    = spell::GetSpell(spellId);
     bool  enoughMP = spell->getMPCost() <= m_PMob->health.mp ||
-                     spell->getSkillType() == SKILL_NINJUTSU ||
-                     spell->getSkillType() == SKILL_SINGING ||
-                     spell->getSkillType() == SKILL_WIND_INSTRUMENT ||
-                     spell->getSkillType() == SKILL_STRING_INSTRUMENT ||
-                     spell->getSkillType() == SKILL_GEOMANCY ||
+                     spell->getSkillType() == xi::SkillType::Ninjutsu ||
+                     spell->getSkillType() == xi::SkillType::Singing ||
+                     spell->getSkillType() == xi::SkillType::WindInstrument ||
+                     spell->getSkillType() == xi::SkillType::StringInstrument ||
+                     spell->getSkillType() == xi::SkillType::Geomancy ||
                      m_PMob->StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Manafont);
 
     bool isNotInRecast = !m_PMob->PRecastContainer->Has(RECAST_MAGIC, static_cast<Recast>(spellId));
@@ -153,11 +155,11 @@ Maybe<SpellID> CMobSpellContainer::GetBestAvailable(SPELLFAMILY family)
             auto* spell         = spell::GetSpell(id);
             bool  sameFamily    = (family == SPELLFAMILY_NONE) ? true : spell->getSpellFamily() == family;
             bool  enoughMP      = spell->getMPCost() <= m_PMob->health.mp ||
-                                  spell->getSkillType() == SKILL_NINJUTSU ||
-                                  spell->getSkillType() == SKILL_SINGING ||
-                                  spell->getSkillType() == SKILL_WIND_INSTRUMENT ||
-                                  spell->getSkillType() == SKILL_STRING_INSTRUMENT ||
-                                  spell->getSkillType() == SKILL_GEOMANCY;
+                                  spell->getSkillType() == xi::SkillType::Ninjutsu ||
+                                  spell->getSkillType() == xi::SkillType::Singing ||
+                                  spell->getSkillType() == xi::SkillType::WindInstrument ||
+                                  spell->getSkillType() == xi::SkillType::StringInstrument ||
+                                  spell->getSkillType() == xi::SkillType::Geomancy;
             bool  isNotInRecast = !m_PMob->PRecastContainer->Has(RECAST_MAGIC, static_cast<Recast>(id));
             if (sameFamily && enoughMP && isNotInRecast)
             {
@@ -198,7 +200,7 @@ Maybe<SpellID> CMobSpellContainer::GetBestIndiSpell(CBattleEntity* PTarget)
     auto intDiff       = mInt - tInt + 10;
     auto macc          = PTarget->getMod(Mod::MACC);
     auto tMaeva        = mTarget->getMod(Mod::MEVA);
-    auto mSkill        = PTarget->GetSkill(SKILL_ELEMENTAL_MAGIC);
+    auto mSkill        = PTarget->GetSkill(xi::SkillType::ElementalMagic);
     auto maccFromInt   = mInt;
 
     if (mInt > tInt + 10)

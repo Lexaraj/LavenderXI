@@ -41,6 +41,7 @@
 #include "packets/s2c/0x033_eventstr.h"
 #include "packets/s2c/0x034_eventnum.h"
 #include "packets/s2c/0x036_talknum.h"
+#include "packets/s2c/0x04f_equip_clear.h"
 #include "packets/s2c/0x050_equip_list.h"
 #include "packets/s2c/0x051_grap_list.h"
 #include "packets/s2c/0x052_eventucoff.h"
@@ -58,13 +59,10 @@
 #include "ai/states/attack_state.h"
 #include "ai/states/item_state.h"
 #include "ai/states/magic_state.h"
-#include "ai/states/range_state.h"
 #include "ai/states/weaponskill_state.h"
 
 #include "ability.h"
 #include "aman.h"
-#include "attack.h"
-#include "automaton_entity.h"
 #include "battlefield.h"
 #include "char_recast_container.h"
 
@@ -72,7 +70,6 @@
 #include "action/interrupts.h"
 #include "blue_spell.h"
 #include "conquest_system.h"
-#include "enums/key_items.h"
 #include "enums/recast.h"
 #include "ipc_client.h"
 #include "item_container.h"
@@ -100,7 +97,6 @@
 #include "trust_entity.h"
 #include "unitychat.h"
 #include "universal_container.h"
-#include "utils/attackutils.h"
 #include "utils/battleutils.h"
 #include "utils/charutils.h"
 #include "utils/gardenutils.h"
@@ -120,16 +116,16 @@ CCharEntity::CCharEntity()
     eventPreparation = new EventPrep();
     currentEvent     = new EventInfo();
 
-    inSequence       = false;
-    gotMessage       = false;
-    m_Locked         = false;
-    m_zoneInCutscene = false;
+    inSequence   = false;
+    gotMessage   = false;
+    m_Locked     = false;
+    m_isPCHidden = false;
 
     accid        = 0;
     m_GMlevel    = 0;
     m_isGMHidden = false;
 
-    allegiance = ALLEGIANCE_TYPE::PLAYER;
+    allegiance = xi::Allegiance::Player;
 
     TradeContainer = new CTradeContainer();
     Container      = new CTradeContainer();
@@ -678,6 +674,7 @@ void CCharEntity::setAutomatonElementMax(const uint8 element, const uint8 max)
 {
     automatonInfo_.elementMax[element] = max;
 }
+
 void CCharEntity::addAutomatonElementCapacity(const uint8 element, const int8 value)
 {
     automatonInfo_.elementEquip[element] += value;
@@ -964,7 +961,7 @@ auto CCharEntity::getEquip(const SLOTTYPE slot) const -> CItemEquipment*
     return static_cast<CItemEquipment*>(equipped_[slot]);
 }
 
-auto CCharEntity::equipLocation(const uint8 equipSlot) const -> std::optional<ItemLocation>
+auto CCharEntity::equipLocation(const uint8 equipSlot) const -> Maybe<ItemLocation>
 {
     if (equipSlot >= EquipSlotCount)
     {
@@ -1283,6 +1280,20 @@ void CCharEntity::flushEquipChanges()
     inventorySyncState_.clearEquipChanges();
 }
 
+void CCharEntity::resyncEquipment()
+{
+    // EQUIP_CLEAR + re-assert every equipped slot.
+    pushPacket<GP_SERV_COMMAND_EQUIP_CLEAR>();
+
+    for (uint8 slotID = 0; slotID < EquipSlotCount; ++slotID)
+    {
+        if (auto loc = equipLocation(slotID))
+        {
+            pushPacket<GP_SERV_COMMAND_EQUIP_LIST>(loc->Slot, static_cast<SLOTTYPE>(slotID), loc->Container);
+        }
+    }
+}
+
 auto CCharEntity::inventorySyncState() -> InventorySyncState&
 {
     return inventorySyncState_;
@@ -1580,24 +1591,24 @@ void CCharEntity::OnCastFinished(CMagicState& state, action_t& action)
     charutils::RemoveStratagems(this, PSpell);
     if (PSpell->tookEffect())
     {
-        charutils::TrySkillUP(this, (SKILLTYPE)PSpell->getSkillType(), PTarget->GetMLevel());
+        charutils::TrySkillUP(this, PSpell->getSkillType(), PTarget->GetMLevel());
 
         CItemWeapon* PItem = static_cast<CItemWeapon*>(getEquip(SLOT_RANGED));
 
         if (PItem && PItem->isType(ITEM_EQUIPMENT))
         {
-            SKILLTYPE Skilltype = (SKILLTYPE)PItem->getSkillType();
+            xi::SkillType Skilltype = PItem->getSkillType();
 
             switch (PSpell->getSkillType())
             {
-                case SKILL_GEOMANCY:
-                    if (Skilltype == SKILL_HANDBELL)
+                case xi::SkillType::Geomancy:
+                    if (Skilltype == xi::SkillType::Handbell)
                     {
                         charutils::TrySkillUP(this, Skilltype, PTarget->GetMLevel());
                     }
                     break;
-                case SKILL_SINGING:
-                    if (Skilltype == SKILL_STRING_INSTRUMENT || Skilltype == SKILL_WIND_INSTRUMENT || Skilltype == SKILL_SINGING)
+                case xi::SkillType::Singing:
+                    if (Skilltype == xi::SkillType::StringInstrument || Skilltype == xi::SkillType::WindInstrument || Skilltype == xi::SkillType::Singing)
                     {
                         charutils::TrySkillUP(this, Skilltype, PTarget->GetMLevel());
                     }
@@ -1805,10 +1816,17 @@ void CCharEntity::OnAbility(CAbilityState& state, action_t& action)
         if (PAbility->getMeritModID() > 0 && !(PAbility->getAddType() & ADDTYPE_MERIT))
         {
             recastReduction = std::chrono::seconds(PMeritPoints->GetMeritValue((MERIT_TYPE)PAbility->getMeritModID(), this));
+
+            if (PAbility->getID() == ABILITY_THIRD_EYE && StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Seigan))
+            {
+                recastReduction = recastReduction / 2;
+            }
         }
 
         auto* charge         = ability::GetCharge(this, static_cast<uint16>(PAbility->getRecastId()));
         auto  baseChargeTime = 0ns; // this can be reduced with merits/job point gifts. NOT the same as Recast- gear (so far...)
+
+        timer::duration bloodPactRecast = 0s;
 
         if (charge && PAbility->getID() != ABILITY_SIC)
         {
@@ -1856,9 +1874,12 @@ void CCharEntity::OnAbility(CAbilityState& state, action_t& action)
 
             int16 bloodPactDelayReduction = favorReduction + std::min<int16>(bloodPact_I_Reduction + bloodPact_II_Reduction + bloodPact_III_Reduction, 30);
 
+            // Snapshot BP recast here so we can carry it into Paralyze check
+            bloodPactRecast = std::max<timer::duration>(0s, action.recast - std::chrono::seconds(bloodPactDelayReduction));
+
             // Localvar will set the BP ability timer when the move consumes MP
             // The delay is snapshot when the player uses the ability: https://www.bg-wiki.com/ffxi/Blood_Pact_Ability_Delay
-            this->SetLocalVar("bpRecastTime", static_cast<uint16>(timer::count_seconds(std::max<timer::duration>(0s, action.recast - std::chrono::seconds(bloodPactDelayReduction)))));
+            this->SetLocalVar("bpRecastTime", static_cast<uint16>(timer::count_seconds(bloodPactRecast)));
 
             // Recast is actually triggered when the bp goes off (no recast packet at all on using a bp and the target moving out of range of the pet)
             action.recast = 0s;
@@ -1871,7 +1892,8 @@ void CCharEntity::OnAbility(CAbilityState& state, action_t& action)
             const auto recastId = PAbility->getRecastId();
             if (recastId != Recast::Special && recastId != Recast::Special2)
             {
-                charutils::ApplyAbilityRecast(this, PAbility, charge, baseChargeTime, action.recast);
+                const bool isBloodPact = recastId == Recast::BloodPactRage || recastId == Recast::BloodPactWard;
+                charutils::ApplyAbilityRecast(this, PAbility, charge, baseChargeTime, isBloodPact ? bloodPactRecast : action.recast);
             }
 
             ActionInterrupts::AbilityParalyzed(this, PTarget);
@@ -2081,7 +2103,7 @@ bool CCharEntity::IsMobOwner(CBattleEntity* PBattleTarget)
 
     if (auto* PMob = dynamic_cast<CMobEntity*>(PBattleTarget))
     {
-        if (PMob->getMobMod(MOBMOD_CLAIM_TYPE) == static_cast<int16>(ClaimType::NonExclusive))
+        if (PMob->getMobMod(MOBMOD_CLAIM_TYPE) == static_cast<int16>(xi::ClaimType::NonExclusive))
         {
             return true;
         }
@@ -2355,8 +2377,8 @@ CBattleEntity* CCharEntity::IsValidTarget(uint16 targid, uint16 validTargetFlags
     {
         // Check if target is a BEHAVIOR_NO_ASSIST mob with player allegiance
         auto* PEntity = GetEntity(targid, TYPE_MOB | TYPE_PC | TYPE_PET | TYPE_TRUST);
-        if (PEntity && PEntity->objtype == TYPE_MOB && static_cast<CMobEntity*>(PEntity)->allegiance == ALLEGIANCE_TYPE::PLAYER &&
-            (static_cast<CMobEntity*>(PEntity)->m_Behavior & BEHAVIOR_NO_ASSIST))
+        if (PEntity && PEntity->objtype == TYPE_MOB && static_cast<CMobEntity*>(PEntity)->allegiance == xi::Allegiance::Player &&
+            ((static_cast<CMobEntity*>(PEntity)->m_Behavior & xi::Behavior::NoAssist) != xi::Behavior::None))
         {
             errMsg = std::make_unique<GP_SERV_COMMAND_BATTLE_MESSAGE>(this, this, 0, 0, MsgBasic::CannotOnThatTarget);
         }
@@ -2431,7 +2453,7 @@ void CCharEntity::Die(timer::duration _duration)
     PAI->Internal_Die(_duration);
 
     // If player allegiance is not reset on death they will auto-homepoint
-    allegiance = ALLEGIANCE_TYPE::PLAYER;
+    allegiance = xi::Allegiance::Player;
 
     // reraise modifiers
     if (this->getMod(Mod::RERAISE_I) > 0)
@@ -2562,7 +2584,6 @@ void CCharEntity::UpdateMoghancement()
 
     // Determine which moghancement to use from the dominant element
     uint8  bestAura          = 0;
-    uint8  bestOrder         = 255;
     uint16 newMoghancementID = 0;
     if (!hasTiedElements && dominantAura > 0)
     {
@@ -2575,13 +2596,16 @@ void CCharEntity::UpdateMoghancement()
                 if (PItem != nullptr && PItem->isType(ITEM_FURNISHING))
                 {
                     CItemFurnishing* PFurniture = static_cast<CItemFurnishing*>(PItem);
-                    // If aura is tied then use whichever furniture was placed most recently
-                    if (PFurniture->isInstalled() && !PFurniture->getOn2ndFloor() && PFurniture->getElement() == dominantElement &&
-                        (PFurniture->getAura() > bestAura || (PFurniture->getAura() == bestAura && PFurniture->getOrder() < bestOrder)))
+                    // Highest aura wins, ties broken by highest moghancement id.
+                    if (PFurniture->isInstalled() && !PFurniture->getOn2ndFloor() && PFurniture->getElement() == dominantElement)
                     {
-                        bestAura          = PFurniture->getAura();
-                        bestOrder         = PFurniture->getOrder();
-                        newMoghancementID = PFurniture->getMoghancement();
+                        const uint8  aura         = PFurniture->getAura();
+                        const uint16 moghancement = PFurniture->getMoghancement();
+                        if (aura > bestAura || (aura == bestAura && moghancement > newMoghancementID))
+                        {
+                            bestAura          = aura;
+                            newMoghancementID = moghancement;
+                        }
                     }
                 }
             }
@@ -2912,8 +2936,8 @@ void CCharEntity::endCurrentEvent()
     currentEvent->reset();
     eventPreparation->reset();
     setLocked(false);
-    m_zoneInCutscene = false;
-    m_Substate       = CHAR_SUBSTATE::SUBSTATE_NONE;
+    m_isPCHidden = false;
+    m_Substate   = CHAR_SUBSTATE::SUBSTATE_NONE;
     tryStartNextEvent();
 }
 
@@ -2995,6 +3019,9 @@ void CCharEntity::tryStartNextEvent()
     // If it's a cutscene, we lock the player immediately
     setLocked(currentEvent->type == CUTSCENE);
 
+    // Set hidden status based on event data
+    m_isPCHidden = currentEvent->isHidden;
+
     if (currentEvent->strings.empty())
     {
         if (currentEvent->params.size() > 0 || currentEvent->textTable != -1)
@@ -3058,6 +3085,11 @@ void CCharEntity::setLocked(bool locked)
 
 auto CCharEntity::getCharVar(const std::string& varName) const -> int32
 {
+    if (varName.length() > 64)
+    {
+        ShowErrorFmt("CCharEntity::getCharVar: Charvar '{}' longer than 60 characters. Please shorten your variable name.", varName);
+    }
+
     if (auto charVar = charVarCache.find(varName); charVar != charVarCache.end())
     {
         std::pair cachedVarData = charVar->second;
@@ -3136,6 +3168,11 @@ auto CCharEntity::getCharVarsWithSuffix(const std::string& suffix) -> std::vecto
 
 void CCharEntity::setCharVar(const std::string& charVarName, int32 value, uint32 expiry /* = 0 */)
 {
+    if (charVarName.length() > 64)
+    {
+        ShowErrorFmt("CCharEntity::setCharVar: Charvar '{}' longer than 60 characters. Please shorten your variable name.", charVarName);
+    }
+
     charVarCache[charVarName] = { value, expiry };
     charutils::PersistCharVar(this->id, charVarName, value, expiry);
 }
@@ -3177,7 +3214,7 @@ void CCharEntity::clearCharVarsWithPrefix(const std::string& prefix)
     db::preparedStmt("DELETE FROM char_vars WHERE charid = ? AND varname LIKE ?", this->id, fmt::format("{}%", prefix));
 }
 
-bool CCharEntity::startSynth(SKILLTYPE synthSkill)
+bool CCharEntity::startSynth(xi::SkillType synthSkill)
 {
     if (PAI)
     {

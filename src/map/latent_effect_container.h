@@ -24,8 +24,10 @@
 
 #include "common/cbasetypes.h"
 
+#include "common/types/fn.h"
+
+#include "data/enums/weather.h"
 #include "entities/pet_entity.h"
-#include "enums/weather.h"
 #include "items/item_equipment.h"
 #include "latent_effect.h"
 
@@ -62,7 +64,7 @@ public:
     void CheckLatentsWeaponBreak(uint8 slot);
     void CheckLatentsZone();
     void CheckLatentsWeather();
-    void CheckLatentsWeather(Weather weather);
+    void CheckLatentsWeather(xi::Weather weather);
     void CheckLatentsTargetChange();
 
     void AddLatentEffects(std::vector<CItemEquipment::itemLatent>& latentList, uint8 reqLvl, uint8 slot);
@@ -78,7 +80,7 @@ private:
     CCharEntity*               m_POwner;
     std::vector<CLatentEffect> m_LatentEffectList;
 
-    void ProcessLatentEffects(const std::function<bool(CLatentEffect&)>& logic);
+    void ProcessLatentEffects(const Fn<bool(CLatentEffect&) const>& logic);
     auto ProcessLatentEffect(CLatentEffect& latentEffect, bool isDuringWs = false) -> bool;
     bool ApplyLatentEffect(CLatentEffect& effect, bool expression);
 };

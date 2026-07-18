@@ -21,6 +21,8 @@
 
 #include "range_state.h"
 
+#include "enums/four_cc.h"
+
 #include "action/action.h"
 #include "action/interrupts.h"
 #include "ai/ai_container.h"
@@ -239,14 +241,14 @@ bool CRangeState::CanUseRangedAttack(CBattleEntity* PTarget, bool isEndOfAttack)
 
         switch (SkillType)
         {
-            case SKILL_THROWING:
+            case xi::SkillType::Throwing:
             {
                 // remove barrage, doesn't work here
                 PChar->StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Barrage);
                 break;
             }
-            case SKILL_ARCHERY:
-            case SKILL_MARKSMANSHIP:
+            case xi::SkillType::Archery:
+            case xi::SkillType::Marksmanship:
             {
                 PRanged = dynamic_cast<CItemWeapon*>(PChar->getEquip(SLOT_AMMO));
                 if (PRanged != nullptr && PRanged->isType(ITEM_WEAPON))

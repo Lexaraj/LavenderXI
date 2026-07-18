@@ -21,6 +21,8 @@
 
 #include "battle_entity.h"
 
+#include "enums/four_cc.h"
+
 #include "common/database.h"
 #include "common/logging.h"
 #include "common/utils.h"
@@ -96,13 +98,13 @@ CBattleEntity::CBattleEntity()
     m_modStat[Mod::HTH_SDT]    = 0;
     m_modStat[Mod::IMPACT_SDT] = 0;
 
-    m_Immunity   = 0;
+    m_Immunity   = xi::Immunity::None;
     isCharmed    = false;
     m_unkillable = false;
 
     m_DeathType = DEATH_TYPE::NONE;
 
-    BattleHistory.lastHitTaken_atkType = ATTACK_TYPE::NONE;
+    BattleHistory.lastHitTaken_atkType = xi::AttackType::None;
 }
 
 CBattleEntity::~CBattleEntity()
@@ -122,7 +124,7 @@ bool CBattleEntity::IsDualWielding()
 
 auto CBattleEntity::isDead() const -> bool
 {
-    return (health.hp <= 0 || status == STATUS_TYPE::DISAPPEAR || PAI->IsCurrentState<CDeathState>() || PAI->IsCurrentState<CDespawnState>());
+    return (health.hp <= 0 || status == xi::Status::Disappear || PAI->IsCurrentState<CDeathState>() || PAI->IsCurrentState<CDespawnState>());
 }
 
 bool CBattleEntity::isAlive()
@@ -147,7 +149,7 @@ bool CBattleEntity::isInDynamis()
     auto* PZone = loc.zone == nullptr ? zoneutils::GetZone(loc.destination) : loc.zone;
     if (PZone)
     {
-        return PZone->GetTypeMask() & ZONE_TYPE::DYNAMIS;
+        return (PZone->GetTypeMask() & xi::ZoneType::Dynamis) != xi::ZoneType::Unknown;
     }
     return false;
 }
@@ -156,7 +158,7 @@ bool CBattleEntity::isInAssault()
 {
     if (loc.zone != nullptr)
     {
-        return loc.zone->GetTypeMask() & ZONE_TYPE::INSTANCED &&
+        return (loc.zone->GetTypeMask() & xi::ZoneType::Instanced) != xi::ZoneType::Unknown &&
                (loc.zone->GetRegionID() >= REGION_TYPE::WEST_AHT_URHGAN && loc.zone->GetRegionID() <= REGION_TYPE::ALZADAAL);
     }
     return false;
@@ -198,12 +200,11 @@ bool CBattleEntity::inMogHouse()
 }
 
 // return true if the mob has immunity
-bool CBattleEntity::hasImmunity(uint32 imID)
+bool CBattleEntity::hasImmunity(xi::Immunity imID)
 {
     if (objtype == TYPE_MOB || objtype == TYPE_PET)
     {
-        IMMUNITY mobImmunity = (IMMUNITY)imID;
-        return (m_Immunity & mobImmunity);
+        return (m_Immunity & imID) != xi::Immunity::None;
     }
     return false;
 }
@@ -266,8 +267,8 @@ void CBattleEntity::UpdateHealth()
     baseMPBonus = std::floor((baseMPBonus + convertMP) * MPPPower);
 
     // Food is additive at the end
-    float foodHPBonus = std::min<int16>(baseHPBonus * m_modStat[Mod::FOOD_HPP] / 100, m_modStat[Mod::FOOD_HP_CAP]);
-    float foodMPBonus = std::min<int16>(baseMPBonus * m_modStat[Mod::FOOD_MPP] / 100, m_modStat[Mod::FOOD_MP_CAP]);
+    float foodHPBonus = std::min<int16>(baseHPBonus * getMod(Mod::FOOD_HPP) / 100, getMod(Mod::FOOD_HP_CAP));
+    float foodMPBonus = std::min<int16>(baseMPBonus * getMod(Mod::FOOD_MPP) / 100, getMod(Mod::FOOD_MP_CAP));
 
     health.modhp = baseHPBonus + foodHPBonus;
     health.modmp = baseMPBonus + foodMPBonus;
@@ -658,7 +659,7 @@ uint16 CBattleEntity::GetMainWeaponDmg()
 
         if (PPetEntity->getPetType() == PET_TYPE::AUTOMATON)
         {
-            return std::floor((GetSkill(SKILL_AUTOMATON_MELEE) / 8.7f) * 2.0f + 3.0f) + getMod(Mod::MAIN_DMG_RATING);
+            return std::floor((GetSkill(xi::SkillType::AutomatonMelee) / 8.7f) * 2.0f + 3.0f) + getMod(Mod::MAIN_DMG_RATING);
         }
         else if (PPetEntity->getPetType() == PET_TYPE::WYVERN)
         {
@@ -810,7 +811,7 @@ uint16 CBattleEntity::GetRangedWeaponDmg()
 
         if (PPetEntity->getPetType() == PET_TYPE::AUTOMATON)
         {
-            return std::floor((GetSkill(SKILL_AUTOMATON_RANGED) / 8.7f) * 2.0f + 3.0f) + getMod(Mod::RANGED_DMG_RATING);
+            return std::floor((GetSkill(xi::SkillType::AutomatonRanged) / 8.7f) * 2.0f + 3.0f) + getMod(Mod::RANGED_DMG_RATING);
         }
         else if (PPetEntity->getPetType() == PET_TYPE::WYVERN)
         {
@@ -881,7 +882,7 @@ uint16 CBattleEntity::GetMainWeaponRank()
         wDamage -= weapon->getModifier(Mod::DMG_RATING);    // Company sword, Maneater, etc don't boost weapon rank
         // apply the H2H formula adjustment only to players
         // as mobs use H2H for dual wield and thus further research is needed
-        if (objtype == TYPE_PC && weapon->getSkillType() == SKILL_HAND_TO_HAND)
+        if (objtype == TYPE_PC && weapon->getSkillType() == xi::SkillType::HandToHand)
         {
             wDamage += 3;
         }
@@ -1022,7 +1023,7 @@ int32 CBattleEntity::addMP(int32 mp)
     return abs(mp);
 }
 
-auto CBattleEntity::takeDamage(int32 amount, CBattleEntity* attacker /* = nullptr*/, ATTACK_TYPE attackType /* = ATTACK_NONE*/, xi::DamageType damageType /* = DAMAGE_NONE*/, bool isSkillchainDamage /* = false */) -> int32
+auto CBattleEntity::takeDamage(int32 amount, CBattleEntity* attacker /* = nullptr*/, xi::AttackType attackType /* = ATTACK_NONE*/, xi::DamageType damageType /* = DAMAGE_NONE*/, bool isSkillchainDamage /* = false */) -> int32
 {
     TracyZoneScoped;
 
@@ -1090,47 +1091,47 @@ uint16 CBattleEntity::STR()
     // Hasso gives STR only if main weapon is two handed
     if (weapon && weapon->isTwoHanded())
     {
-        return std::clamp(stats.STR + m_modStat[Mod::STR] + m_modStat[Mod::TWOHAND_STR], 0, 999);
+        return std::clamp(stats.STR + getMod(Mod::STR) + getMod(Mod::TWOHAND_STR), 0, 999);
     }
-    return std::clamp(stats.STR + m_modStat[Mod::STR], 0, 999);
+    return std::clamp(stats.STR + getMod(Mod::STR), 0, 999);
 }
 
 uint16 CBattleEntity::DEX()
 {
-    return std::clamp(stats.DEX + m_modStat[Mod::DEX], 0, 999);
+    return std::clamp(stats.DEX + getMod(Mod::DEX), 0, 999);
 }
 
 uint16 CBattleEntity::VIT()
 {
-    return std::clamp(stats.VIT + m_modStat[Mod::VIT], 0, 999);
+    return std::clamp(stats.VIT + getMod(Mod::VIT), 0, 999);
 }
 
 uint16 CBattleEntity::AGI()
 {
-    return std::clamp(stats.AGI + m_modStat[Mod::AGI], 0, 999);
+    return std::clamp(stats.AGI + getMod(Mod::AGI), 0, 999);
 }
 
 uint16 CBattleEntity::INT()
 {
-    return std::clamp(stats.INT + m_modStat[Mod::INT], 0, 999);
+    return std::clamp(stats.INT + getMod(Mod::INT), 0, 999);
 }
 
 uint16 CBattleEntity::MND()
 {
-    return std::clamp(stats.MND + m_modStat[Mod::MND], 0, 999);
+    return std::clamp(stats.MND + getMod(Mod::MND), 0, 999);
 }
 
 uint16 CBattleEntity::CHR()
 {
-    return std::clamp(stats.CHR + m_modStat[Mod::CHR], 0, 999);
+    return std::clamp(stats.CHR + getMod(Mod::CHR), 0, 999);
 }
 
 uint16 CBattleEntity::ATT(SLOTTYPE slot)
 {
     TracyZoneScoped;
 
-    int32 ATT           = 8 + m_modStat[Mod::ATT];
-    auto  ATTP          = m_modStat[Mod::ATTP];
+    int32 ATT           = 8 + getMod(Mod::ATT);
+    auto  ATTP          = getMod(Mod::ATTP);
     auto* weapon        = dynamic_cast<CItemWeapon*>(m_Weapons[slot]);
     float strMultiplier = 0.5;
 
@@ -1182,7 +1183,7 @@ uint16 CBattleEntity::ATT(SLOTTYPE slot)
     }
     else if (this->objtype == TYPE_PET && ((CPetEntity*)this)->getPetType() == PET_TYPE::AUTOMATON)
     {
-        ATT += this->GetSkill(SKILL_AUTOMATON_MELEE);
+        ATT += this->GetSkill(xi::SkillType::AutomatonMelee);
     }
     else if (this->objtype == TYPE_PET)
     {
@@ -1203,7 +1204,7 @@ uint16 CBattleEntity::ATT(SLOTTYPE slot)
         }
     }
     // use max to prevent underflow
-    return std::max(1, ATT + (ATT * ATTP / 100) + std::min<int16>((ATT * m_modStat[Mod::FOOD_ATTP] / 100), m_modStat[Mod::FOOD_ATT_CAP]));
+    return std::max(1, ATT + (ATT * ATTP / 100) + std::min<int16>((ATT * getMod(Mod::FOOD_ATTP) / 100), getMod(Mod::FOOD_ATT_CAP)));
 }
 
 auto CBattleEntity::RATT(uint16 bonusAtt) -> uint16
@@ -1223,7 +1224,7 @@ auto CBattleEntity::RATT(uint16 bonusAtt) -> uint16
         auto* weapon  = dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_RANGED]);
 
         // Return 0 if ranged weapon but no ammo
-        if (weapon && weapon->getSkillType() != SKILL_THROWING && dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_AMMO]) == nullptr)
+        if (weapon && weapon->getSkillType() != xi::SkillType::Throwing && dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_AMMO]) == nullptr)
         {
             return 0;
         }
@@ -1237,12 +1238,12 @@ auto CBattleEntity::RATT(uint16 bonusAtt) -> uint16
         if (weapon)
         {
             // non-damaging weapon
-            if (weapon->getDmgType() == xi::DamageType::None || weapon->getSkillType() == SKILL_NONE)
+            if (weapon->getDmgType() == xi::DamageType::None || weapon->getSkillType() == xi::SkillType::None)
             {
                 return 0;
             }
 
-            if (weapon->getSkillType() != SKILL_FISHING)
+            if (weapon->getSkillType() != xi::SkillType::Fishing)
             {
                 skillLevel = GetSkill(weapon->getSkillType());
                 skillLevel += weapon->getILvlSkill();
@@ -1256,23 +1257,23 @@ auto CBattleEntity::RATT(uint16 bonusAtt) -> uint16
     }
     else if (objtype & TYPE_PET && static_cast<CPetEntity*>(this)->getPetType() == PET_TYPE::AUTOMATON)
     {
-        skillLevel = this->GetSkill(SKILL_AUTOMATON_RANGED);
+        skillLevel = this->GetSkill(xi::SkillType::AutomatonRanged);
     }
     else if (objtype & TYPE_TRUST)
     {
         strMultiplier = 0.75; // TODO: verify
 
-        auto archery_acc      = this->GetSkill(SKILL_ARCHERY);
-        auto marksmanship_acc = this->GetSkill(SKILL_MARKSMANSHIP);
-        auto throwing_acc     = this->GetSkill(SKILL_THROWING);
+        auto archery_acc      = this->GetSkill(xi::SkillType::Archery);
+        auto marksmanship_acc = this->GetSkill(xi::SkillType::Marksmanship);
+        auto throwing_acc     = this->GetSkill(xi::SkillType::Throwing);
 
         skillLevel = std::max({ archery_acc, marksmanship_acc, throwing_acc });
     }
     // mobs and pets don't have "skill level" -- it's baked into m_modStat[Mod::RATT]
 
-    int32 RATT = 8 + skillLevel + bonusAtt + m_modStat[Mod::RATT] + battleutils::GetRangedAttackBonuses(this) + std::floor(STR() * strMultiplier);
+    int32 RATT = 8 + skillLevel + bonusAtt + getMod(Mod::RATT) + battleutils::GetRangedAttackBonuses(this) + std::floor(STR() * strMultiplier);
     // use max to prevent any underflow
-    return std::max<int16>(1, RATT + (RATT * m_modStat[Mod::RATTP] / 100.f) + std::min<int16>((RATT * m_modStat[Mod::FOOD_RATTP] / 100.f), m_modStat[Mod::FOOD_RATT_CAP]));
+    return std::max<int16>(1, RATT + (RATT * getMod(Mod::RATTP) / 100.f) + std::min<int16>((RATT * getMod(Mod::FOOD_RATTP) / 100.f), getMod(Mod::FOOD_RATT_CAP)));
 }
 
 inline uint32 GetAccFromSkill(uint32 skill)
@@ -1312,7 +1313,7 @@ auto CBattleEntity::RACC(uint16 bonusAcc) -> uint16
         auto* weapon = dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_RANGED]);
 
         // Return 0 if ranged weapon but no ammo
-        if (weapon && weapon->getSkillType() != SKILL_THROWING && dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_AMMO]) == nullptr)
+        if (weapon && weapon->getSkillType() != xi::SkillType::Throwing && dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_AMMO]) == nullptr)
         {
             return 0;
         }
@@ -1328,12 +1329,12 @@ auto CBattleEntity::RACC(uint16 bonusAcc) -> uint16
         if (weapon)
         {
             // non-damaging weapon
-            if (weapon->getDmgType() == xi::DamageType::None || weapon->getSkillType() == SKILL_NONE)
+            if (weapon->getDmgType() == xi::DamageType::None || weapon->getSkillType() == xi::SkillType::None)
             {
                 return 0;
             }
 
-            if (weapon->getSkillType() != SKILL_FISHING)
+            if (weapon->getSkillType() != xi::SkillType::Fishing)
             {
                 skillLevel = GetSkill(weapon->getSkillType());
                 skillLevel += weapon->getILvlSkill();
@@ -1354,27 +1355,27 @@ auto CBattleEntity::RACC(uint16 bonusAcc) -> uint16
     }
     else if (objtype & TYPE_PET && static_cast<CPetEntity*>(this)->getPetType() == PET_TYPE::AUTOMATON)
     {
-        uint16 skillLevel = this->GetSkill(SKILL_AUTOMATON_RANGED);
+        uint16 skillLevel = this->GetSkill(xi::SkillType::AutomatonRanged);
 
         RACC = GetAccFromSkill(skillLevel);
         RACC += std::floor(AGI() * 0.5);
-        RACC += m_modStat[Mod::ACC] + bonusAcc;
+        RACC += getMod(Mod::ACC) + bonusAcc;
 
         // Tandem Strike is listed here in ACC call but no clue if it works for automatons or RACC in general
     }
     else if (objtype & TYPE_TRUST)
     {
-        auto archery_acc      = this->GetSkill(SKILL_ARCHERY);
-        auto marksmanship_acc = this->GetSkill(SKILL_MARKSMANSHIP);
-        auto throwing_acc     = this->GetSkill(SKILL_THROWING);
+        auto archery_acc      = this->GetSkill(xi::SkillType::Archery);
+        auto marksmanship_acc = this->GetSkill(xi::SkillType::Marksmanship);
+        auto throwing_acc     = this->GetSkill(xi::SkillType::Throwing);
 
         RACC = GetAccFromSkill(std::max({ archery_acc, marksmanship_acc, throwing_acc }));
         RACC += std::floor(AGI() * 0.75); // 0.75 needs verification
-        RACC += m_modStat[Mod::RACC] + bonusAcc;
+        RACC += getMod(Mod::RACC) + bonusAcc;
     }
     else // pets, mobs
     {
-        RACC = m_modStat[Mod::RACC] + bonusAcc;
+        RACC = getMod(Mod::RACC) + bonusAcc;
 
         // TODO: does this work for ranged accuracy?
         if (petutils::IsTandemActive(this))
@@ -1419,10 +1420,10 @@ uint16 CBattleEntity::ACC(uint8 attackNumber, uint16 offsetAccuracy)
 
     if (this->objtype & TYPE_PC)
     {
-        float  dexMultiplier = 0.5f;
-        uint8  skill         = 0;
-        uint16 iLvlSkill     = 0;
-        auto*  PMainWeapon   = dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_MAIN]);
+        float         dexMultiplier = 0.5f;
+        xi::SkillType skill         = xi::SkillType::None;
+        uint16        iLvlSkill     = 0;
+        auto*         PMainWeapon   = dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_MAIN]);
 
         if (attackNumber == 0)
         {
@@ -1432,9 +1433,9 @@ uint16 CBattleEntity::ACC(uint8 attackNumber, uint16 offsetAccuracy)
             {
                 skill     = PMainWeapon->getSkillType();
                 iLvlSkill = PMainWeapon->getILvlSkill();
-                if ((skill == SKILL_NONE && GetSkill(SKILL_HAND_TO_HAND) > 0) || PMainWeapon->isHandToHand())
+                if ((skill == xi::SkillType::None && GetSkill(xi::SkillType::HandToHand) > 0) || PMainWeapon->isHandToHand())
                 {
-                    skill         = SKILL_HAND_TO_HAND;
+                    skill         = xi::SkillType::HandToHand;
                     dexMultiplier = settings::get<float>("main.HAND_TO_HAND_DEX_ACCURACY_MULTIPLIER");
                 }
             }
@@ -1447,12 +1448,12 @@ uint16 CBattleEntity::ACC(uint8 attackNumber, uint16 offsetAccuracy)
                 skill         = weapon->getSkillType();
                 iLvlSkill     = weapon->getILvlSkill();
 
-                if (skill == SKILL_NONE && GetSkill(SKILL_HAND_TO_HAND) > 0)
+                if (skill == xi::SkillType::None && GetSkill(xi::SkillType::HandToHand) > 0)
                 {
                     auto* main_weapon = dynamic_cast<CItemWeapon*>(m_Weapons[SLOT_MAIN]);
-                    if (main_weapon && (main_weapon->getSkillType() == SKILL_NONE || main_weapon->getSkillType() == SKILL_HAND_TO_HAND))
+                    if (main_weapon && (main_weapon->getSkillType() == xi::SkillType::None || main_weapon->getSkillType() == xi::SkillType::HandToHand))
                     {
-                        skill         = SKILL_HAND_TO_HAND;
+                        skill         = xi::SkillType::HandToHand;
                         dexMultiplier = settings::get<float>("main.HAND_TO_HAND_DEX_ACCURACY_MULTIPLIER");
                     }
                 }
@@ -1460,7 +1461,7 @@ uint16 CBattleEntity::ACC(uint8 attackNumber, uint16 offsetAccuracy)
             else if (PMainWeapon && PMainWeapon->isHandToHand())
             {
                 iLvlSkill     = PMainWeapon->getILvlSkill();
-                skill         = SKILL_HAND_TO_HAND;
+                skill         = xi::SkillType::HandToHand;
                 dexMultiplier = settings::get<float>("main.HAND_TO_HAND_DEX_ACCURACY_MULTIPLIER");
             }
         }
@@ -1470,7 +1471,7 @@ uint16 CBattleEntity::ACC(uint8 attackNumber, uint16 offsetAccuracy)
             {
                 iLvlSkill = weapon->getILvlSkill();
             }
-            skill         = SKILL_HAND_TO_HAND;
+            skill         = xi::SkillType::HandToHand;
             dexMultiplier = settings::get<float>("main.HAND_TO_HAND_DEX_ACCURACY_MULTIPLIER");
         }
 
@@ -1482,13 +1483,13 @@ uint16 CBattleEntity::ACC(uint8 attackNumber, uint16 offsetAccuracy)
             dexMultiplier = settings::get<float>("main.TWO_HANDED_DEX_ACCURACY_MULTIPLIER");
 
             ACC += std::floor(DEX() * dexMultiplier);
-            ACC += m_modStat[Mod::TWOHAND_ACC];
+            ACC += getMod(Mod::TWOHAND_ACC);
         }
         else
         {
             ACC += std::floor(DEX() * dexMultiplier);
         }
-        ACC = (ACC + m_modStat[Mod::ACC] + offsetAccuracy);
+        ACC = (ACC + getMod(Mod::ACC) + offsetAccuracy);
 
         if (this->StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Enlight))
         {
@@ -1506,16 +1507,16 @@ uint16 CBattleEntity::ACC(uint8 attackNumber, uint16 offsetAccuracy)
             ACC += PChar->PMeritPoints->GetMeritValue(MERIT_ACCURACY, PChar);
         }
 
-        ACC = ACC + std::min<int16>((ACC * m_modStat[Mod::FOOD_ACCP] / 100.f), m_modStat[Mod::FOOD_ACC_CAP]);
+        ACC = ACC + std::min<int16>((ACC * getMod(Mod::FOOD_ACCP) / 100.f), getMod(Mod::FOOD_ACC_CAP));
         return std::max<int16>(0, ACC);
     }
     else if (this->objtype == TYPE_PET && ((CPetEntity*)this)->getPetType() == PET_TYPE::AUTOMATON)
     {
-        int32 skillLevel = this->GetSkill(SKILL_AUTOMATON_MELEE);
+        int32 skillLevel = this->GetSkill(xi::SkillType::AutomatonMelee);
 
         ACC = GetAccFromSkill(skillLevel);
         ACC += std::floor(DEX() * 0.5);
-        ACC += m_modStat[Mod::ACC] + offsetAccuracy;
+        ACC += getMod(Mod::ACC) + offsetAccuracy;
 
         if (this->StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Enlight))
         {
@@ -1532,7 +1533,7 @@ uint16 CBattleEntity::ACC(uint8 attackNumber, uint16 offsetAccuracy)
     }
     else
     {
-        ACC = m_modStat[Mod::ACC] + offsetAccuracy;
+        ACC = getMod(Mod::ACC) + offsetAccuracy;
 
         if (this->StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Enlight))
         {
@@ -1613,16 +1614,28 @@ uint16 CBattleEntity::DEF()
         }
     }
 
-    DEF += m_modStat[Mod::DEF];
+    DEF += getMod(Mod::DEF);
 
-    // TODO: support old style counterstance
     if (this->StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Counterstance, 0))
     {
+        // https://ffxiclopedia.fandom.com/wiki/Talk:Counterstance: DEF = 1 + VIT/2; gear/Protect ignored; % mods apply
+        if (settings::get<bool>("main.USE_OLD_COUNTERSTANCE"))
+        {
+            DEF = 1 + VIT() / 2;
+
+            if (CStatusEffect* PMinne = this->StatusEffectContainer->GetStatusEffect(xi::StatusEffect::Minne))
+            {
+                DEF += PMinne->GetPower();
+            }
+
+            return std::max(1, DEF + (DEF * getMod(Mod::DEFP) / 100) + std::min<int16>((DEF * getMod(Mod::FOOD_DEFP) / 100), getMod(Mod::FOOD_DEF_CAP)));
+        }
+
         return DEF / 2;
     }
 
     // use max to prevent underflow
-    return std::max(1, DEF + (DEF * m_modStat[Mod::DEFP] / 100) + std::min<int16>((DEF * m_modStat[Mod::FOOD_DEFP] / 100), m_modStat[Mod::FOOD_DEF_CAP]));
+    return std::max(1, DEF + (DEF * getMod(Mod::DEFP) / 100) + std::min<int16>((DEF * getMod(Mod::FOOD_DEFP) / 100), getMod(Mod::FOOD_DEF_CAP)));
 }
 
 uint16 CBattleEntity::EVA()
@@ -1633,11 +1646,11 @@ uint16 CBattleEntity::EVA()
 
     if (this->objtype == TYPE_MOB || (this->objtype == TYPE_PET && !isAutomaton))
     {
-        evasion = m_modStat[Mod::EVA]; // Mobs and pets base evasion is based off the EVA mod
+        evasion = getMod(Mod::EVA); // Mobs and pets base evasion is based off the EVA mod
     }
-    else // Players and automatons use SKILL_EVASION
+    else // Players and automatons use xi::SkillType::Evasion
     {
-        evasion = GetSkill(SKILL_EVASION);
+        evasion = GetSkill(xi::SkillType::Evasion);
 
         // Skill based evasion calculation
         if (evasion > 200)
@@ -1648,7 +1661,7 @@ uint16 CBattleEntity::EVA()
 
     evasion += AGI() / 2;
 
-    return std::max(1, evasion + (this->objtype == TYPE_MOB || (this->objtype == TYPE_PET && !isAutomaton) ? 0 : m_modStat[Mod::EVA])); // The mod for a pet or mob is already calclated in the above so return 0
+    return std::max(1, evasion + (this->objtype == TYPE_MOB || (this->objtype == TYPE_PET && !isAutomaton) ? 0 : getMod(Mod::EVA))); // The mod for a pet or mob is already calclated in the above so return 0
 }
 
 JOBTYPE CBattleEntity::GetMJob() const
@@ -1966,7 +1979,7 @@ void CBattleEntity::savePetModifiers()
     for (auto mod : petModsToUpdate)
     {
         // Only update the saved map if it exists and is different
-        int16 currentVal = m_modStat[mod];
+        int16 currentVal = getMod(mod);
         auto  it         = m_modStatSave.find(mod);
         if (it == m_modStatSave.end() || it->second != currentVal)
         {
@@ -2082,7 +2095,8 @@ int16 CBattleEntity::getMod(Mod modID)
         return 0;
     }
 
-    return m_modStat[modID];
+    const auto it = m_modStat.find(modID);
+    return it != m_modStat.end() ? it->second : 0;
 }
 
 /************************************************************************
@@ -2226,13 +2240,13 @@ void CBattleEntity::removePetModifiers(CPetEntity* PPet)
  *                                                                      *
  ************************************************************************/
 
-uint16 CBattleEntity::GetSkill(uint16 SkillID)
+uint16 CBattleEntity::GetSkill(xi::SkillType SkillID)
 {
     TracyZoneScoped;
 
-    if (SkillID < MAX_SKILLTYPE)
+    if (static_cast<uint8>(SkillID) < MAX_SKILLTYPE)
     {
-        return WorkingSkills.skill[SkillID] & 0x7FFF;
+        return WorkingSkills.skill[static_cast<uint8>(SkillID)] & 0x7FFF;
     }
     return 0;
 }
@@ -2275,20 +2289,20 @@ bool CBattleEntity::ValidTarget(CBattleEntity* PInitiator, uint16 targetFlags)
         if (!isDead())
         {
             // Teams PVP
-            if (allegiance >= ALLEGIANCE_TYPE::WYVERNS && PInitiator->allegiance >= ALLEGIANCE_TYPE::WYVERNS)
+            if (allegiance >= xi::Allegiance::Wyverns && PInitiator->allegiance >= xi::Allegiance::Wyverns)
             {
                 return allegiance != PInitiator->allegiance;
             }
 
             // Nation PVP
-            if ((allegiance >= ALLEGIANCE_TYPE::SAN_DORIA && allegiance <= ALLEGIANCE_TYPE::WINDURST) &&
-                (PInitiator->allegiance >= ALLEGIANCE_TYPE::SAN_DORIA && PInitiator->allegiance <= ALLEGIANCE_TYPE::WINDURST))
+            if ((allegiance >= xi::Allegiance::SanDoria && allegiance <= xi::Allegiance::Windurst) &&
+                (PInitiator->allegiance >= xi::Allegiance::SanDoria && PInitiator->allegiance <= xi::Allegiance::Windurst))
             {
                 return allegiance != PInitiator->allegiance;
             }
 
             // PVE
-            if (allegiance <= ALLEGIANCE_TYPE::PLAYER && PInitiator->allegiance <= ALLEGIANCE_TYPE::PLAYER)
+            if (allegiance <= xi::Allegiance::Player && PInitiator->allegiance <= xi::Allegiance::Player)
             {
                 bool haveDiffAllegiances = allegiance != PInitiator->allegiance;
 
@@ -2534,7 +2548,7 @@ void CBattleEntity::OnCastFinished(CMagicState& state, action_t& action)
             damage = luautils::OnSpellCast(this, PTarget, PSpell);
 
             // Remove Saboteur
-            if (PSpell->getSkillType() == SKILLTYPE::SKILL_ENFEEBLING_MAGIC)
+            if (PSpell->getSkillType() == xi::SkillType::EnfeeblingMagic)
             {
                 StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Saboteur);
             }
@@ -2555,7 +2569,7 @@ void CBattleEntity::OnCastFinished(CMagicState& state, action_t& action)
             if (PSpell->getSpellGroup() == SPELLGROUP_BLUE && PSpell->getElement() == ELEMENT_NONE && msg == MsgBasic::MagicDamage)
             {
                 actionResult.recordDamage(attack_outcome_t{
-                    .atkType    = ATTACK_TYPE::PHYSICAL,
+                    .atkType    = xi::AttackType::Physical,
                     .damage     = damage,
                     .target     = PTarget,
                     .isCritical = PSpell->isCritical(),
@@ -2676,7 +2690,7 @@ void CBattleEntity::OnCastFinished(CMagicState& state, action_t& action)
         // No mobs should claim with magic not even charmed mobs.
 
         bool isTargetValidMob = (PActionTarget->objtype == TYPE_MOB && PActionTarget->allegiance != this->allegiance);
-        bool isNotSummoning   = (PSpell->getSkillType() != SKILL_SUMMONING_MAGIC);
+        bool isNotSummoning   = (PSpell->getSkillType() != xi::SkillType::SummoningMagic);
         bool isAutomaton      = (this->objtype == TYPE_PET && static_cast<CPetEntity*>(this)->getPetType() == PET_TYPE::AUTOMATON);
         bool isMob            = (this->objtype == TYPE_MOB);
 
@@ -2690,11 +2704,35 @@ void CBattleEntity::OnCastFinished(CMagicState& state, action_t& action)
 
     StatusEffectContainer->DelStatusEffectsByFlag(xi::StatusEffectFlag::MagicEnd);
 
+    // Remove Divine Emblem effect.
+    if (PSpell->getSkillType() == xi::SkillType::DivineMagic && StatusEffectContainer->HasStatusEffect(xi::StatusEffect::DivineEmblem))
+    {
+        StatusEffectContainer->DelStatusEffect(xi::StatusEffect::DivineEmblem);
+    }
+
+    // Remove Stymie effect.
+    if (PSpell->getSkillType() == xi::SkillType::EnfeeblingMagic && StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Stymie))
+    {
+        StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Stymie);
+    }
+
     // Remove Cascade effect and consume TP.
-    if (PSpell->getSkillType() == SKILL_ELEMENTAL_MAGIC && StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Cascade))
+    if (PSpell->getSkillType() == xi::SkillType::ElementalMagic && StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Cascade))
     {
         StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Cascade);
         this->health.tp = 0;
+    }
+
+    // Remove Marcato effect.
+    if (PSpell->getSkillType() == xi::SkillType::Singing && StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Marcato))
+    {
+        StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Marcato);
+    }
+
+    // Remove Ebullience effect.
+    if (PSpell->getSpellGroup() == SPELLGROUP_BLACK && StatusEffectContainer->HasStatusEffect(xi::StatusEffect::Ebullience))
+    {
+        StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Ebullience);
     }
 
     PRecastContainer->Add(RECAST_MAGIC, static_cast<Recast>(PSpell->getID()), action.recast);
@@ -3052,7 +3090,8 @@ void CBattleEntity::OnMobSkillFinished(CMobSkillState& state, action_t& action)
         if (PSkill->getMsg() == MsgBasic::ShadowAbsorb) // Setting of shadow message is handled in mobskills.lua
         {
             result.resolution = ActionResolution::Miss;
-            result.param      = damage; // damage is the number of shadows consumed to display in chat log
+            result.param      = damage;          // damage is the number of shadows consumed to display in chat log
+            result.knockback  = Knockback::None; // Shadows negate knockback for most skills
         }
         else if (PSkill->hasMissMsg())
         {
@@ -3125,7 +3164,7 @@ void CBattleEntity::OnMobSkillFinished(CMobSkillState& state, action_t& action)
 
     if (PTarget)
     {
-        if (PTarget->objtype == TYPE_MOB && this->allegiance == ALLEGIANCE_TYPE::PLAYER)
+        if (PTarget->objtype == TYPE_MOB && this->allegiance == xi::Allegiance::Player)
         {
             bool isAvatar   = (this->objtype == TYPE_PET && static_cast<CPetEntity*>(this)->getPetType() == PET_TYPE::AVATAR); // this is here to prevent other pet types from calling ClaimMob.
             bool isKillShot = PTarget->isDead();
@@ -3286,11 +3325,11 @@ void CBattleEntity::OnRangedAttack(CRangeState& state, action_t& action)
                 {
                     if (slot == SLOT_RANGED && PItem != nullptr)
                     {
-                        charutils::TrySkillUP(PChar, static_cast<SKILLTYPE>(PItem->getSkillType()), PTarget->GetMLevel());
+                        charutils::TrySkillUP(PChar, PItem->getSkillType(), PTarget->GetMLevel());
                     }
                     else if (slot == SLOT_AMMO && PAmmo != nullptr)
                     {
-                        charutils::TrySkillUP(PChar, static_cast<SKILLTYPE>(PAmmo->getSkillType()), PTarget->GetMLevel());
+                        charutils::TrySkillUP(PChar, PAmmo->getSkillType(), PTarget->GetMLevel());
                     }
                 }
                 totalDamage += damage;
@@ -3383,7 +3422,7 @@ void CBattleEntity::OnRangedAttack(CRangeState& state, action_t& action)
             totalDamage     = attackutils::CheckForDamageMultiplier(PChar, PItem, totalDamage, attackType, slot, true);
         }
         actionResult.recordDamage(attack_outcome_t{
-            .atkType    = ATTACK_TYPE::PHYSICAL,
+            .atkType    = xi::AttackType::Physical,
             .damage     = battleutils::TakePhysicalDamage(this, PTarget, PHYSICAL_ATTACK_TYPE::RANGED, totalDamage, false, slot, realHits, nullptr, true, true),
             .target     = PTarget,
             .isCritical = wasCritical,
@@ -3693,29 +3732,29 @@ bool CBattleEntity::OnAttack(CAttackState& state, action_t& action)
                     }
                     else
                     {
-                        int32     naturalh2hDMG = 0;
-                        auto*     targ_weapon   = dynamic_cast<CItemWeapon*>(PTarget->m_Weapons[SLOT_MAIN]);
-                        SKILLTYPE skilltype     = SKILLTYPE::SKILL_NONE;
+                        int32         naturalh2hDMG = 0;
+                        auto*         targ_weapon   = dynamic_cast<CItemWeapon*>(PTarget->m_Weapons[SLOT_MAIN]);
+                        xi::SkillType skilltype     = xi::SkillType::None;
 
                         if (PTarget->objtype == TYPE_PC)
                         {
                             if (targ_weapon)
                             {
-                                skilltype = static_cast<SKILLTYPE>(targ_weapon->getSkillType());
+                                skilltype = targ_weapon->getSkillType();
                             }
                             else
                             {
-                                skilltype = SKILLTYPE::SKILL_HAND_TO_HAND;
+                                skilltype = xi::SkillType::HandToHand;
                             }
                         }
 
                         float mobH2HPenalty = 1.0f;
 
-                        if (PTarget->objtype == TYPE_PC && skilltype == SKILLTYPE::SKILL_HAND_TO_HAND)
+                        if (PTarget->objtype == TYPE_PC && skilltype == xi::SkillType::HandToHand)
                         {
-                            naturalh2hDMG = std::floor<int32>((PTarget->GetSkill(SKILL_HAND_TO_HAND) * 0.11f) + 3);
+                            naturalh2hDMG = std::floor<int32>((PTarget->GetSkill(xi::SkillType::HandToHand) * 0.11f) + 3);
                         }
-                        else if (PTarget->objtype == TYPE_MOB && targ_weapon && targ_weapon->getSkillType() == SKILLTYPE::SKILL_HAND_TO_HAND) // This is how Attack Round checks for h2h penalty
+                        else if (PTarget->objtype == TYPE_MOB && targ_weapon && targ_weapon->getSkillType() == xi::SkillType::HandToHand) // This is how Attack Round checks for h2h penalty
                         {
                             REGION_TYPE regionID = PTarget->loc.zone->GetRegionID();
                             if (static_cast<CMobEntity*>(PTarget)->getMobMod(MOBMOD_NO_H2H_PENALTY) == 0)
@@ -3759,7 +3798,7 @@ bool CBattleEntity::OnAttack(CAttackState& state, action_t& action)
                         else if (PTarget->objtype == TYPE_PET && PTarget->PMaster && PTarget->PMaster->objtype == TYPE_PC &&
                                  static_cast<CPetEntity*>(PTarget)->getPetType() == PET_TYPE::AUTOMATON)
                         {
-                            puppetutils::TrySkillUP((CAutomatonEntity*)PTarget, SKILL_AUTOMATON_MELEE, GetMLevel());
+                            puppetutils::TrySkillUP((CAutomatonEntity*)PTarget, xi::SkillType::AutomatonMelee, GetMLevel());
                         }
                     }
                 }
@@ -3837,7 +3876,7 @@ bool CBattleEntity::OnAttack(CAttackState& state, action_t& action)
                 {
                     // This will set the physical hit distortion accordingly
                     actionResult.recordDamage(attack_outcome_t{
-                        .atkType    = ATTACK_TYPE::PHYSICAL,
+                        .atkType    = xi::AttackType::Physical,
                         .damage     = damage,
                         .target     = PTarget,
                         .isCritical = attack.IsCritical(),
@@ -3849,7 +3888,7 @@ bool CBattleEntity::OnAttack(CAttackState& state, action_t& action)
             {
                 if (!attack.IsCountered() && !attack.IsParried())
                 {
-                    charutils::TrySkillUP((CCharEntity*)PTarget, SKILL_EVASION, GetMLevel());
+                    charutils::TrySkillUP((CCharEntity*)PTarget, xi::SkillType::Evasion, GetMLevel());
                 }
             }
         }
@@ -3866,7 +3905,7 @@ bool CBattleEntity::OnAttack(CAttackState& state, action_t& action)
             // player should still be able to skill up evasion on an evaded attack
             if (auto* PChar = dynamic_cast<CCharEntity*>(PTarget))
             {
-                charutils::TrySkillUP(PChar, SKILL_EVASION, GetMLevel());
+                charutils::TrySkillUP(PChar, xi::SkillType::Evasion, GetMLevel());
             }
 
             this->PAI->EventHandler.triggerListener("MELEE_SWING_MISS", this, PTarget, &attack);

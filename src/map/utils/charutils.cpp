@@ -20,11 +20,15 @@
 */
 
 #include "common/logging.h"
+
 #include "common/macros.h"
 #include "common/settings.h"
 #include "common/timer.h"
 #include "common/utils.h"
 #include "common/vana_time.h"
+#include <fmt/ranges.h>
+
+#include <common/types/hash_map.h>
 
 #include <array>
 #include <chrono>
@@ -147,6 +151,7 @@ std::vector<std::pair<uint16, EMobDifficulty>> ExpToDifficultyTable = {};
 */
 
 std::pair<uint16, uint8> IncrediblyEasyPreyCheck = { 1, 56 };
+
 // { EXP value, mob level }
 // { 1, 56 }
 // Must gain more than 1 exp but less than the lowest of ExpToDifficultyTable and greater than or equal to mob level
@@ -875,7 +880,7 @@ auto LoadChar(Scheduler& scheduler, MapConfig config, const uint32 charId) -> st
             if (SkillID < MAX_SKILLTYPE)
             {
                 PChar->RealSkills.skill[SkillID] = rset->get<uint16>("value");
-                if (SkillID >= SKILL_FISHING)
+                if (SkillID >= static_cast<uint8>(xi::SkillType::Fishing))
                 {
                     PChar->RealSkills.rank[SkillID] = rset->get<uint8>("rank");
                 }
@@ -984,7 +989,7 @@ auto LoadChar(Scheduler& scheduler, MapConfig config, const uint32 charId) -> st
     luautils::OnZoneIn(PChar);
     luautils::OnGameIn(PChar, zoning == 1);
 
-    PChar->status = STATUS_TYPE::DISAPPEAR;
+    PChar->status = xi::Status::Disappear;
 
     return charEntity;
 }
@@ -1045,7 +1050,7 @@ void LoadSpells(CCharEntity* PChar)
 
     if (hasTrustPermit)
     {
-        static const std::unordered_map<uint8, uint16> trustSpells = {
+        static const HashMap<uint8, uint16> trustSpells = {
             { 1, 1002 }, // Cornelia
             { 2, 1003 }, // Matsui-P
         }; // This can be expanded if more trust spells are added as settings options.
@@ -1791,7 +1796,7 @@ auto AddItem(CCharEntity* PChar, uint8 LocationID, std::unique_ptr<CItem> PItem,
  *                                                                       *
  ************************************************************************/
 
-bool HasItem(CCharEntity* PChar, uint16 ItemID)
+bool HasItem(CCharEntity* PChar, uint16 ItemID, IncludeRecycleBin includeRecycleBin)
 {
     if (ItemID == 0)
     {
@@ -1799,6 +1804,11 @@ bool HasItem(CCharEntity* PChar, uint16 ItemID)
     }
     for (uint8 LocID = 0; LocID < CONTAINER_ID::MAX_CONTAINER_ID; ++LocID)
     {
+        if (!includeRecycleBin && LocID == LOC_RECYCLEBIN)
+        {
+            continue;
+        }
+
         if (PChar->getStorage(LocID)->SearchItem(ItemID) != ERROR_SLOTID)
         {
             return true;
@@ -2002,41 +2012,14 @@ uint32 UpdateItem(CCharEntity* PChar, uint8 LocationID, uint8 slotID, int32 quan
         auto PRemoved = PChar->getStorage(LocationID)->RemoveItem(slotID);
         PChar->pushPacket<GP_SERV_COMMAND_ITEM_ATTR>(nullptr, static_cast<CONTAINER_ID>(LocationID), slotID);
 
-        if (PChar->getStyleLocked() && !HasItem(PChar, ItemID))
-        {
-            if (PItem->isType(ITEM_WEAPON))
-            {
-                if (PChar->styleItems[SLOT_MAIN] == ItemID)
-                {
-                    charutils::UpdateWeaponStyle(PChar, SLOT_MAIN, (CItemWeapon*)PChar->getEquip(SLOT_MAIN));
-                }
-                else if (PChar->styleItems[SLOT_SUB] == ItemID)
-                {
-                    charutils::UpdateWeaponStyle(PChar, SLOT_SUB, (CItemWeapon*)PChar->getEquip(SLOT_SUB));
-                }
-            }
-            else if (PItem->isType(ITEM_EQUIPMENT))
-            {
-                auto equipSlotID = ((CItemEquipment*)PItem)->getSlotType();
-                if (PChar->styleItems[equipSlotID] == ItemID)
-                {
-                    switch (equipSlotID)
-                    {
-                        case SLOT_HEAD:
-                        case SLOT_BODY:
-                        case SLOT_HANDS:
-                        case SLOT_LEGS:
-                        case SLOT_FEET:
-                            charutils::UpdateArmorStyle(PChar, equipSlotID);
-                            break;
-                    }
-                }
-            }
-        }
         luautils::OnItemDrop(PChar, PItem);
 
-        // Remove soon to be stale PItem pointer from sync state
-        PChar->inventorySyncState().removeEquipChange(PItem);
+        // Equipped item consumed to 0: resync equipment.
+        if (PChar->inventorySyncState().hasEquipChange(PItem))
+        {
+            PChar->inventorySyncState().clearEquipChanges();
+            PChar->resyncEquipment();
+        }
     }
     return ItemID;
 }
@@ -2270,7 +2253,7 @@ void UnequipItem(CCharEntity* PChar, uint8 equipSlotID, Recalculate recalculate)
                     PChar->look.ranged = 0;
                 }
                 PChar->m_Weapons[SLOT_RANGED] = nullptr;
-                if (((CItemWeapon*)PItem)->getSkillType() != SKILL_STRING_INSTRUMENT && ((CItemWeapon*)PItem)->getSkillType() != SKILL_WIND_INSTRUMENT)
+                if (((CItemWeapon*)PItem)->getSkillType() != xi::SkillType::StringInstrument && ((CItemWeapon*)PItem)->getSkillType() != xi::SkillType::WindInstrument)
                 {
                     PChar->health.tp = 0;
                     PChar->StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Aftermath);
@@ -2285,7 +2268,7 @@ void UnequipItem(CCharEntity* PChar, uint8 equipSlotID, Recalculate recalculate)
                 {
                     CItemEquipment* PSub = PChar->getEquip(SLOT_SUB);
 
-                    if (static_cast<CItemWeapon*>(PItem)->getSkillType() == SKILL_HAND_TO_HAND)
+                    if (static_cast<CItemWeapon*>(PItem)->getSkillType() == xi::SkillType::HandToHand)
                     {
                         PChar->look.sub = 0;
                     }
@@ -2443,13 +2426,13 @@ bool EquipArmor(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 conta
                 {
                     switch (static_cast<CItemWeapon*>(PItem)->getSkillType())
                     {
-                        case SKILL_HAND_TO_HAND:
-                        case SKILL_GREAT_SWORD:
-                        case SKILL_GREAT_AXE:
-                        case SKILL_SCYTHE:
-                        case SKILL_POLEARM:
-                        case SKILL_GREAT_KATANA:
-                        case SKILL_STAFF:
+                        case xi::SkillType::HandToHand:
+                        case xi::SkillType::GreatSword:
+                        case xi::SkillType::GreatAxe:
+                        case xi::SkillType::Scythe:
+                        case xi::SkillType::Polearm:
+                        case xi::SkillType::GreatKatana:
+                        case xi::SkillType::Staff:
                         {
                             CItemEquipment* sub = PChar->getEquip(SLOT_SUB);
                             if (sub != nullptr && sub->isType(ITEM_EQUIPMENT))
@@ -2457,7 +2440,7 @@ bool EquipArmor(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 conta
                                 if (sub->isType(ITEM_WEAPON))
                                 {
                                     CItemWeapon* PWeapon = static_cast<CItemWeapon*>(sub);
-                                    if (PWeapon->getSkillType() != SKILL_NONE || static_cast<CItemWeapon*>(PItem)->getSkillType() == SKILL_HAND_TO_HAND)
+                                    if (PWeapon->getSkillType() != xi::SkillType::None || static_cast<CItemWeapon*>(PItem)->getSkillType() == xi::SkillType::HandToHand)
                                     {
                                         UnequipItem(PChar, SLOT_SUB, Recalculate::No);
                                     }
@@ -2467,12 +2450,14 @@ bool EquipArmor(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 conta
                                     UnequipItem(PChar, SLOT_SUB, Recalculate::No);
                                 }
                             }
-                            if (static_cast<CItemWeapon*>(PItem)->getSkillType() == SKILL_HAND_TO_HAND)
+                            if (static_cast<CItemWeapon*>(PItem)->getSkillType() == xi::SkillType::HandToHand)
                             {
                                 PChar->look.sub = PItem->getModelId() + 0x1000;
                             }
                         }
                         break;
+                        default:
+                            break;
                     }
                     if (PChar->PAI->IsEngaged())
                     {
@@ -2509,7 +2494,7 @@ bool EquipArmor(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 conta
                 {
                     switch (weapon->getSkillType())
                     {
-                        case SKILL_HAND_TO_HAND:
+                        case xi::SkillType::HandToHand:
                         {
                             if (!PItem->isType(ITEM_WEAPON))
                             {
@@ -2517,16 +2502,16 @@ bool EquipArmor(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 conta
                             }
                             break;
                         }
-                        case SKILL_DAGGER:
-                        case SKILL_SWORD:
-                        case SKILL_AXE:
-                        case SKILL_KATANA:
-                        case SKILL_CLUB:
+                        case xi::SkillType::Dagger:
+                        case xi::SkillType::Sword:
+                        case xi::SkillType::Axe:
+                        case xi::SkillType::Katana:
+                        case xi::SkillType::Club:
                         {
                             CItemWeapon* PNewItemWeapon = dynamic_cast<CItemWeapon*>(PItem);
                             bool         isWeapon       = PItem->isType(ITEM_WEAPON);
 
-                            if (isWeapon && (!charutils::hasTrait(PChar, TRAIT_DUAL_WIELD) || (PNewItemWeapon && PNewItemWeapon->getSkillType() == SKILL_NONE)))
+                            if (isWeapon && (!charutils::hasTrait(PChar, TRAIT_DUAL_WIELD) || (PNewItemWeapon && PNewItemWeapon->getSkillType() == xi::SkillType::None)))
                             {
                                 return false;
                             }
@@ -2544,7 +2529,7 @@ bool EquipArmor(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 conta
                             {
                                 UnequipItem(PChar, SLOT_MAIN, Recalculate::No);
                             }
-                            else if (static_cast<CItemWeapon*>(PItem)->getSkillType() != SKILL_NONE)
+                            else if (static_cast<CItemWeapon*>(PItem)->getSkillType() != xi::SkillType::None)
                             {
                                 // allow Grips to be equipped
                                 return false;
@@ -2565,7 +2550,7 @@ bool EquipArmor(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 conta
                     {
                         // If the subtype of the ranged weapon is not compatible with the ammo, unequip it, except for Archery where Longbow and Shortbow both use arrows
                         if (static_cast<CItemWeapon*>(PItem)->getSkillType() != weapon->getSkillType() ||
-                            (weapon->getSkillType() != SKILL_ARCHERY && static_cast<CItemWeapon*>(PItem)->getSubSkillType() != weapon->getSubSkillType()))
+                            (weapon->getSkillType() != xi::SkillType::Archery && static_cast<CItemWeapon*>(PItem)->getSubSkillType() != weapon->getSubSkillType()))
                         {
                             UnequipItem(PChar, SLOT_AMMO, Recalculate::No);
                         }
@@ -2585,7 +2570,7 @@ bool EquipArmor(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 conta
                     {
                         // If the subtype of the ammo is not compatible with the ranged weapon, unequip it, except for Archery where Longbow and Shortbow both use arrows
                         if (static_cast<CItemWeapon*>(PItem)->getSkillType() != weapon->getSkillType() ||
-                            (weapon->getSkillType() != SKILL_ARCHERY && static_cast<CItemWeapon*>(PItem)->getSubSkillType() != weapon->getSubSkillType()))
+                            (weapon->getSkillType() != xi::SkillType::Archery && static_cast<CItemWeapon*>(PItem)->getSubSkillType() != weapon->getSubSkillType()))
                         {
                             UnequipItem(PChar, SLOT_RANGED, Recalculate::No);
                         }
@@ -2678,7 +2663,7 @@ auto hasValidStyle(CCharEntity* PChar, const CItemEquipment* PItem, const CItemE
 
         // Marvelous Cheer special case
         // It is not technically a Wind Instrument, but it can lockstyle one.
-        if (PWeapon && AItem->getID() == MARVELOUS_CHEER && PWeapon->getSkillType() == SKILL_WIND_INSTRUMENT)
+        if (PWeapon && AItem->getID() == MARVELOUS_CHEER && PWeapon->getSkillType() == xi::SkillType::WindInstrument)
         {
             return HasItem(PChar, AItem->getID());
         }
@@ -2754,16 +2739,26 @@ void UpdateWeaponStyle(CCharEntity* PChar, uint8 equipSlotID, CItemEquipment* PI
                 {
                     switch (PWeapon->getSkillType())
                     {
-                        case SKILL_HAND_TO_HAND:
-                            PChar->mainlook.sub = appearanceModel + 0x1000;
+                        case xi::SkillType::HandToHand:
+                            if (hasValidStyle(PChar, PItem, appearance))
+                            {
+                                PChar->mainlook.sub = appearanceModel + 0x1000;
+                            }
+                            else
+                            {
+                                PChar->mainlook.sub = PChar->look.sub;
+                            }
+
                             break;
-                        case SKILL_GREAT_SWORD:
-                        case SKILL_GREAT_AXE:
-                        case SKILL_SCYTHE:
-                        case SKILL_POLEARM:
-                        case SKILL_GREAT_KATANA:
-                        case SKILL_STAFF:
+                        case xi::SkillType::GreatSword:
+                        case xi::SkillType::GreatAxe:
+                        case xi::SkillType::Scythe:
+                        case xi::SkillType::Polearm:
+                        case xi::SkillType::GreatKatana:
+                        case xi::SkillType::Staff:
                             PChar->mainlook.sub = PChar->look.sub;
+                            break;
+                        default:
                             break;
                     }
                 }
@@ -3319,13 +3314,13 @@ void EquipItem(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 contai
         auto PItemWeapon = dynamic_cast<CItemWeapon*>(PItem);
         auto PMainItem   = dynamic_cast<CItemWeapon*>(PChar->getEquip(SLOT_MAIN));
 
-        if (PItemWeapon && PItemWeapon->getSkillType() == SKILL_NONE && (!PMainItem || !PMainItem->isTwoHanded()))
+        if (PItemWeapon && PItemWeapon->getSkillType() == xi::SkillType::None && (!PMainItem || !PMainItem->isTwoHanded()))
         {
             PChar->pushPacket<GP_SERV_COMMAND_BATTLE_MESSAGE>(PChar, PChar, 0, 0, MsgBasic::Requires2HForGrip);
             return;
         }
 
-        if (PItemWeapon && PItemWeapon->getSkillType() != SKILL_NONE)
+        if (PItemWeapon && PItemWeapon->getSkillType() != xi::SkillType::None)
         {
             // Don't attempt to equip item in equip menu if you don't have dual wield trait (client sees BLU, THF, DNC, NIN, /DNC or /NIN etc as able to equip sub weapons even if sub is too low or no trait on BLU)
             if (!PChar->hasTrait(TRAIT_DUAL_WIELD))
@@ -3344,7 +3339,7 @@ void EquipItem(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 contai
 
         // Disallow everything but shields if you're using H2H
         // Equipping a shield will unequip the H2H weapon and you will go barefisted with a shield
-        if (PMainItem && PMainItem->getSkillType() == SKILL_HAND_TO_HAND)
+        if (PMainItem && PMainItem->getSkillType() == xi::SkillType::HandToHand)
         {
             return;
         }
@@ -3414,7 +3409,7 @@ void EquipItem(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 contai
     if (equipSlotID == SLOT_MAIN || equipSlotID == SLOT_RANGED || equipSlotID == SLOT_SUB)
     {
         if (!PItem || !PItem->isType(ITEM_EQUIPMENT) ||
-            (((CItemWeapon*)PItem)->getSkillType() != SKILL_STRING_INSTRUMENT && ((CItemWeapon*)PItem)->getSkillType() != SKILL_WIND_INSTRUMENT))
+            (((CItemWeapon*)PItem)->getSkillType() != xi::SkillType::StringInstrument && ((CItemWeapon*)PItem)->getSkillType() != xi::SkillType::WindInstrument))
         {
             // If the weapon ISN'T a wind based instrument or a string based instrument
             PChar->health.tp = 0;
@@ -3464,7 +3459,7 @@ void CheckValidEquipment(CCharEntity* PChar)
         if (slotID == SLOT_SUB && !PItem->IsShield())
         {
             // Unequip if no main weapon or a non-grip subslot without DW
-            if (!PChar->getEquip(SLOT_MAIN) || (!charutils::hasTrait(PChar, TRAIT_DUAL_WIELD) && !(((CItemWeapon*)PItem)->getSkillType() == SKILL_NONE)))
+            if (!PChar->getEquip(SLOT_MAIN) || (!charutils::hasTrait(PChar, TRAIT_DUAL_WIELD) && !(((CItemWeapon*)PItem)->getSkillType() == xi::SkillType::None)))
             {
                 UnequipItem(PChar, SLOT_SUB);
                 continue;
@@ -3538,7 +3533,7 @@ void BuildingCharWeaponSkills(CCharEntity* PChar)
 
     // add in melee ws
     PItem       = dynamic_cast<CItemWeapon*>(PChar->getEquip(SLOT_MAIN));
-    uint8 skill = PItem ? PItem->getSkillType() : (uint8)SKILL_HAND_TO_HAND;
+    uint8 skill = PItem ? static_cast<uint8>(PItem->getSkillType()) : (uint8)xi::SkillType::HandToHand;
 
     const auto& MeleeWeaponSkillList = battleutils::GetWeaponSkills(skill);
     for (auto&& PSkill : MeleeWeaponSkillList)
@@ -3551,9 +3546,9 @@ void BuildingCharWeaponSkills(CCharEntity* PChar)
 
     // add in ranged ws
     PItem = dynamic_cast<CItemWeapon*>(PChar->getEquip(SLOT_RANGED));
-    if (PItem != nullptr && PItem->isType(ITEM_WEAPON) && PItem->getSkillType() != SKILL_THROWING)
+    if (PItem != nullptr && PItem->isType(ITEM_WEAPON) && PItem->getSkillType() != xi::SkillType::Throwing)
     {
-        skill                             = PItem ? PItem->getSkillType() : 0;
+        skill                             = PItem ? static_cast<uint8>(PItem->getSkillType()) : 0;
         const auto& RangedWeaponSkillList = battleutils::GetWeaponSkills(skill);
         for (auto&& PSkill : RangedWeaponSkillList)
         {
@@ -3736,25 +3731,25 @@ void BuildingCharAbilityTable(CCharEntity* PChar)
 }
 
 // determines if this player has bonus for this skill based on the active sch arts
-bool isArtsBonusActive(CCharEntity* PChar, SKILLTYPE SkillID)
+bool isArtsBonusActive(CCharEntity* PChar, xi::SkillType SkillID)
 {
-    return (SkillID >= SKILL_DIVINE_MAGIC && SkillID <= SKILL_ENFEEBLING_MAGIC &&
+    return (SkillID >= xi::SkillType::DivineMagic && SkillID <= xi::SkillType::EnfeeblingMagic &&
             PChar->StatusEffectContainer->HasStatusEffect({ xi::StatusEffect::LightArts, xi::StatusEffect::AddendumWhite })) ||
-           (SkillID >= SKILL_ENFEEBLING_MAGIC && SkillID <= SKILL_DARK_MAGIC &&
+           (SkillID >= xi::SkillType::EnfeeblingMagic && SkillID <= xi::SkillType::DarkMagic &&
             PChar->StatusEffectContainer->HasStatusEffect({ xi::StatusEffect::DarkArts, xi::StatusEffect::AddendumBlack }));
 }
 
 // calculates the bonus skill based on active sch arts
-int16 ArtsBonusSkill(CCharEntity* PChar, SKILLTYPE SkillID)
+int16 ArtsBonusSkill(CCharEntity* PChar, xi::SkillType SkillID)
 {
     int16 skillBonus = 0;
 
     uint16 maxMainSkill = battleutils::GetMaxSkill(SkillID, PChar->GetMJob(), PChar->GetMLevel());
     uint16 maxSubSkill  = battleutils::GetMaxSkill(SkillID, PChar->GetSJob(), PChar->GetSLevel());
 
-    uint16 artsSkill    = battleutils::GetMaxSkill(SKILL_ENHANCING_MAGIC, JOB_RDM, PChar->GetMLevel());                               // B+ skill
+    uint16 artsSkill    = battleutils::GetMaxSkill(xi::SkillType::EnhancingMagic, JOB_RDM, PChar->GetMLevel());                       // B+ skill
     uint16 skillCapD    = battleutils::GetMaxSkill(SkillID, JOB_SCH, PChar->GetMLevel());                                             // D skill cap
-    uint16 skillCapE    = battleutils::GetMaxSkill(SKILL_DARK_MAGIC, JOB_RDM, PChar->GetMLevel());                                    // E skill cap
+    uint16 skillCapE    = battleutils::GetMaxSkill(xi::SkillType::DarkMagic, JOB_RDM, PChar->GetMLevel());                            // E skill cap
     auto   currentSkill = std::clamp<uint16>((PChar->RealSkills.skill[(int32)SkillID] / 10), 0, std::max(maxMainSkill, maxSubSkill)); // working skill before bonuses
     uint16 artsBaseline = 0;                                                                                                          // Level based baseline to which to raise skills
     uint8  mLevel       = PChar->GetMLevel();
@@ -3871,16 +3866,16 @@ void BuildingCharSkillsTable(CCharEntity* PChar)
             PChar->WorkingSkills.skill[i] = 0x8000;
             continue;
         }
-        uint16 maxMainSkill = battleutils::GetMaxSkill((SKILLTYPE)i, PChar->GetMJob(), PChar->GetMLevel());
-        uint16 maxSubSkill  = battleutils::GetMaxSkill((SKILLTYPE)i, PChar->GetSJob(), PChar->GetSLevel());
+        uint16 maxMainSkill = battleutils::GetMaxSkill((xi::SkillType)i, PChar->GetMJob(), PChar->GetMLevel());
+        uint16 maxSubSkill  = battleutils::GetMaxSkill((xi::SkillType)i, PChar->GetSJob(), PChar->GetSLevel());
         int16  skillBonus   = 0;
 
         // apply arts bonuses
-        if (isArtsBonusActive(PChar, static_cast<SKILLTYPE>(i)))
+        if (isArtsBonusActive(PChar, static_cast<xi::SkillType>(i)))
         {
-            skillBonus += ArtsBonusSkill(PChar, static_cast<SKILLTYPE>(i));
+            skillBonus += ArtsBonusSkill(PChar, static_cast<xi::SkillType>(i));
         }
-        else if (i >= SKILL_AUTOMATON_MELEE && i <= SKILL_AUTOMATON_MAGIC)
+        else if (i >= static_cast<int32>(xi::SkillType::AutomatonMelee) && i <= static_cast<int32>(xi::SkillType::AutomatonMagic))
         {
             // TODO: does this need to change if you are /PUP?
             maxMainSkill = battleutils::GetMaxSkill(1, PChar->GetMLevel()); // A+ capped down to the Automaton's rating
@@ -3892,8 +3887,8 @@ void BuildingCharSkillsTable(CCharEntity* PChar)
         // Add 79 to get the modifier ID
         skillBonus += PChar->getMod(static_cast<Mod>(i + 79)); // This can be a negative value. Example: Shiva's Shotel.
 
-        uint8 mainSkillRank = battleutils::GetSkillRank((SKILLTYPE)i, PChar->GetMJob());
-        uint8 subSkillRank  = battleutils::GetSkillRank((SKILLTYPE)i, PChar->GetSJob());
+        uint8 mainSkillRank = battleutils::GetSkillRank((xi::SkillType)i, PChar->GetMJob());
+        uint8 subSkillRank  = battleutils::GetSkillRank((xi::SkillType)i, PChar->GetSJob());
 
         PChar->WorkingSkills.rank[i] = mainSkillRank;
 
@@ -3963,20 +3958,20 @@ void BuildingCharSkillsTable(CCharEntity* PChar)
         }
 
         // Automaton skills are special (especially with magic...)
-        if (i >= SKILL_AUTOMATON_MELEE && i <= SKILL_AUTOMATON_MAGIC)
+        if (i >= static_cast<int32>(xi::SkillType::AutomatonMelee) && i <= static_cast<int32>(xi::SkillType::AutomatonMagic))
         {
             if (auto PAutomaton = dynamic_cast<CAutomatonEntity*>(PChar->PPet))
             {
-                switch (i)
+                switch (static_cast<xi::SkillType>(i))
                 {
-                    case SKILL_AUTOMATON_MAGIC:
+                    case xi::SkillType::AutomatonMagic:
                         PAutomaton->WorkingSkills.skill[i] = PChar->WorkingSkills.skill[i];
 
-                        PAutomaton->WorkingSkills.skill[SKILL_HEALING_MAGIC]    = PChar->WorkingSkills.skill[i];
-                        PAutomaton->WorkingSkills.skill[SKILL_ENHANCING_MAGIC]  = PChar->WorkingSkills.skill[i];
-                        PAutomaton->WorkingSkills.skill[SKILL_ENFEEBLING_MAGIC] = PChar->WorkingSkills.skill[i];
-                        PAutomaton->WorkingSkills.skill[SKILL_ELEMENTAL_MAGIC]  = PChar->WorkingSkills.skill[i];
-                        PAutomaton->WorkingSkills.skill[SKILL_DARK_MAGIC]       = PChar->WorkingSkills.skill[i];
+                        PAutomaton->WorkingSkills.skill[static_cast<uint8>(xi::SkillType::HealingMagic)]    = PChar->WorkingSkills.skill[i];
+                        PAutomaton->WorkingSkills.skill[static_cast<uint8>(xi::SkillType::EnhancingMagic)]  = PChar->WorkingSkills.skill[i];
+                        PAutomaton->WorkingSkills.skill[static_cast<uint8>(xi::SkillType::EnfeeblingMagic)] = PChar->WorkingSkills.skill[i];
+                        PAutomaton->WorkingSkills.skill[static_cast<uint8>(xi::SkillType::ElementalMagic)]  = PChar->WorkingSkills.skill[i];
+                        PAutomaton->WorkingSkills.skill[static_cast<uint8>(xi::SkillType::DarkMagic)]       = PChar->WorkingSkills.skill[i];
                         break;
 
                     default:
@@ -4056,7 +4051,7 @@ void BuildingCharTraitsTable(CCharEntity* PChar)
  *                                                                       *
  ************************************************************************/
 
-void TrySkillUP(CCharEntity* PChar, SKILLTYPE SkillID, uint8 lvl, bool forceSkillUp, bool useSubSkill)
+void TrySkillUP(CCharEntity* PChar, xi::SkillType SkillID, uint8 lvl, bool forceSkillUp, bool useSubSkill)
 {
     TracyZoneScoped;
 
@@ -4111,12 +4106,12 @@ void TrySkillUP(CCharEntity* PChar, SKILLTYPE SkillID, uint8 lvl, bool forceSkil
 
         // Check for skillup% bonus. https://www.bg-wiki.com/bg/Category:Skill_Up_Food
         // Assuming multiplicative even though rate is already a % because 0.5 + 0.8 would be > 1.
-        if ((SkillID >= 1 && SkillID <= 12) || (SkillID >= 25 && SkillID <= 31))
+        if ((rawSkillID >= 1 && rawSkillID <= 12) || (rawSkillID >= 25 && rawSkillID <= 31))
         // if should effect automaton replace the above with: (SkillID >= 1 && SkillID <= 31)
         {
             SkillUpChance *= ((100.0f + PChar->getMod(Mod::COMBAT_SKILLUP_RATE)) / 100.0f);
         }
-        else if (SkillID >= 32 && SkillID <= 44)
+        else if (rawSkillID >= 32 && rawSkillID <= 44)
         {
             SkillUpChance *= ((100.0f + PChar->getMod(Mod::MAGIC_SKILLUP_RATE)) / 100.0f);
         }
@@ -4194,7 +4189,7 @@ void TrySkillUP(CCharEntity* PChar, SKILLTYPE SkillID, uint8 lvl, bool forceSkil
             {
                 // skill is capped. set blue flag
                 SkillAmount = CapSkill - CurSkill;
-                PChar->WorkingSkills.skill[SkillID] |= 0x8000;
+                PChar->WorkingSkills.skill[rawSkillID] |= 0x8000;
             }
 
             // check if skillup changed the bonus from sch arts
@@ -4204,8 +4199,8 @@ void TrySkillUP(CCharEntity* PChar, SKILLTYPE SkillID, uint8 lvl, bool forceSkil
                 skillBonus = ArtsBonusSkill(PChar, SkillID);
             }
 
-            PChar->RealSkills.skill[SkillID] += SkillAmount;
-            PChar->pushPacket<GP_SERV_COMMAND_BATTLE_MESSAGE>(PChar, PChar, SkillID, SkillAmount, MsgBasic::SkillGain);
+            PChar->RealSkills.skill[rawSkillID] += SkillAmount;
+            PChar->pushPacket<GP_SERV_COMMAND_BATTLE_MESSAGE>(PChar, PChar, rawSkillID, SkillAmount, MsgBasic::SkillGain);
 
             if ((CurSkill / 10) < (CurSkill + SkillAmount) / 10) // if gone up a level
             {
@@ -4216,17 +4211,17 @@ void TrySkillUP(CCharEntity* PChar, SKILLTYPE SkillID, uint8 lvl, bool forceSkil
                     // if the bonus is the same, our real skill was already past the base bonus, so increment the shown skill from skillup
                     if (skillBonus == ArtsBonusSkill(PChar, SkillID))
                     {
-                        PChar->WorkingSkills.skill[SkillID] += 1;
+                        PChar->WorkingSkills.skill[rawSkillID] += 1;
                     }
                 }
                 else
                 {
-                    PChar->WorkingSkills.skill[SkillID] += 1;
+                    PChar->WorkingSkills.skill[rawSkillID] += 1;
                 }
                 PChar->pushPacket<GP_SERV_COMMAND_CLISTATUS2>(PChar);
-                PChar->pushPacket<GP_SERV_COMMAND_BATTLE_MESSAGE>(PChar, PChar, SkillID, (CurSkill + SkillAmount) / 10, MsgBasic::SkillLevelUp);
+                PChar->pushPacket<GP_SERV_COMMAND_BATTLE_MESSAGE>(PChar, PChar, rawSkillID, (CurSkill + SkillAmount) / 10, MsgBasic::SkillLevelUp);
 
-                CheckWeaponSkill(PChar, SkillID);
+                CheckWeaponSkill(PChar, rawSkillID);
                 /* ignoring this for now
                 if (SkillID >= 1 && SkillID <= 12)
                 {
@@ -4235,7 +4230,7 @@ void TrySkillUP(CCharEntity* PChar, SKILLTYPE SkillID, uint8 lvl, bool forceSkil
                 }
                 */
             }
-            SaveCharSkills(PChar, SkillID);
+            SaveCharSkills(PChar, rawSkillID);
         }
     }
 }
@@ -4251,8 +4246,8 @@ void CheckWeaponSkill(CCharEntity* PChar, uint8 skill)
     auto* weapon       = dynamic_cast<CItemWeapon*>(PChar->m_Weapons[SLOT_MAIN]);
     auto* rangedWeapon = dynamic_cast<CItemWeapon*>(PChar->m_Weapons[SLOT_RANGED]);
 
-    bool noOrInvalidMainWeapon   = !weapon || weapon->getSkillType() != skill;
-    bool noOrInvalidRangedWeapon = !rangedWeapon || rangedWeapon->getSkillType() != skill;
+    bool noOrInvalidMainWeapon   = !weapon || static_cast<uint8>(weapon->getSkillType()) != skill;
+    bool noOrInvalidRangedWeapon = !rangedWeapon || static_cast<uint8>(rangedWeapon->getSkillType()) != skill;
 
     if (noOrInvalidMainWeapon && noOrInvalidRangedWeapon)
     {
@@ -4556,7 +4551,7 @@ bool canUseWeaponSkill(CCharEntity* PChar, uint16 wsid)
         return false;
     }
 
-    return PChar->GetSkill(PWeaponSkill->getType()) >= PWeaponSkill->getSkillLevel();
+    return PChar->GetSkill(static_cast<xi::SkillType>(PWeaponSkill->getType())) >= PWeaponSkill->getSkillLevel();
 }
 
 /************************************************************************
@@ -4674,6 +4669,7 @@ void SetExpDifficultyCurve(std::vector<std::pair<uint16, EMobDifficulty>>& curve
     ExpToDifficultyTable    = curve;
     IncrediblyEasyPreyCheck = incrediblyEasyPreyData;
 }
+
 /************************************************************************
  *                                                                       *
  *  Return mob difficulty according to level difference                  *
@@ -4747,6 +4743,26 @@ uint32 GetExpNEXTLevel(uint8 charlvl)
         return g_ExpPerLevel[charlvl];
     }
     return 0;
+}
+
+/************************************************************************
+ *                                                                       *
+ *  Level used to calculate EXP.                                         *
+ *                                                                       *
+ ************************************************************************/
+
+uint8 GetExpLevel(CBattleEntity* PMember)
+{
+    if (auto* PChar = dynamic_cast<CCharEntity*>(PMember))
+    {
+        CStatusEffect* PRestriction = PChar->StatusEffectContainer->GetStatusEffect(xi::StatusEffect::LevelRestriction);
+        if (PRestriction && PRestriction->GetSubPower() == 1) // subPower 1 means EXP rate based on the player's true level
+        {
+            return PChar->jobs.job[PChar->GetMJob()];
+        }
+    }
+
+    return PMember->GetMLevel();
 }
 
 /************************************************************************
@@ -4916,7 +4932,7 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
 
     uint8       pcinzone = 0;
     uint8       minlevel = 0;
-    uint8       maxlevel = PChar->GetMLevel();
+    uint8       maxlevel = GetExpLevel(PChar);
     REGION_TYPE region   = PChar->loc.zone->GetRegionID();
 
     if (PChar->PParty)
@@ -4952,13 +4968,14 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                 {
                     maxlevel = PMember->PPet->GetMLevel();
                 }
-                if (PMember->GetMLevel() > maxlevel)
+                const uint8 memberExpLevel = GetExpLevel(PMember);
+                if (memberExpLevel > maxlevel)
                 {
-                    maxlevel = PMember->GetMLevel();
+                    maxlevel = memberExpLevel;
                 }
-                else if (PMember->GetMLevel() < minlevel)
+                else if (memberExpLevel < minlevel)
                 {
-                    minlevel = PMember->GetMLevel();
+                    minlevel = memberExpLevel;
                 }
                 pcinzone++;
             }
@@ -4982,7 +4999,7 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
             bool chainactive = false;
 
             const int16 moblevel    = PMob->GetMLevel() + PMob->getMod(Mod::EXP_LVL_MOD);
-            const uint8 memberlevel = PMember->GetMLevel();
+            const uint8 memberlevel = GetExpLevel(PMember);
 
             EMobDifficulty mobCheck = CheckMob(maxlevel, PMob);
             float          exp      = static_cast<float>(GetBaseExp(maxlevel, moblevel));
@@ -5028,11 +5045,11 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                     }
 
                     // Per monster caps pulled from: https://ffxiclopedia.fandom.com/wiki/Experience_Points
-                    if (PMember->GetMLevel() <= 50)
+                    if (memberlevel <= 50)
                     {
                         exp = std::fmin(exp, 400.0f);
                     }
-                    else if (PMember->GetMLevel() <= 60)
+                    else if (memberlevel <= 60)
                     {
                         exp = std::fmin(exp, 500.0f);
                     }
@@ -5073,27 +5090,27 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                         }
                         else
                         {
-                            if (PMember->GetMLevel() <= 10)
+                            if (memberlevel <= 10)
                             {
                                 PMember->expChain.chainTime = timer::now() + 50s;
                             }
-                            else if (PMember->GetMLevel() <= 20)
+                            else if (memberlevel <= 20)
                             {
                                 PMember->expChain.chainTime = timer::now() + 100s;
                             }
-                            else if (PMember->GetMLevel() <= 30)
+                            else if (memberlevel <= 30)
                             {
                                 PMember->expChain.chainTime = timer::now() + 150s;
                             }
-                            else if (PMember->GetMLevel() <= 40)
+                            else if (memberlevel <= 40)
                             {
                                 PMember->expChain.chainTime = timer::now() + 200s;
                             }
-                            else if (PMember->GetMLevel() <= 50)
+                            else if (memberlevel <= 50)
                             {
                                 PMember->expChain.chainTime = timer::now() + 250s;
                             }
-                            else if (PMember->GetMLevel() <= 60)
+                            else if (memberlevel <= 60)
                             {
                                 PMember->expChain.chainTime = timer::now() + 300s;
                             }
@@ -5104,7 +5121,7 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                             PMember->expChain.chainNumber = 1;
                         }
 
-                        if (chainactive && PMember->GetMLevel() <= 10)
+                        if (chainactive && memberlevel <= 10)
                         {
                             switch (PMember->expChain.chainNumber)
                             {
@@ -5131,7 +5148,7 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                                     break;
                             }
                         }
-                        else if (chainactive && PMember->GetMLevel() <= 20)
+                        else if (chainactive && memberlevel <= 20)
                         {
                             switch (PMember->expChain.chainNumber)
                             {
@@ -5158,7 +5175,7 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                                     break;
                             }
                         }
-                        else if (chainactive && PMember->GetMLevel() <= 30)
+                        else if (chainactive && memberlevel <= 30)
                         {
                             switch (PMember->expChain.chainNumber)
                             {
@@ -5185,7 +5202,7 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                                     break;
                             }
                         }
-                        else if (chainactive && PMember->GetMLevel() <= 40)
+                        else if (chainactive && memberlevel <= 40)
                         {
                             switch (PMember->expChain.chainNumber)
                             {
@@ -5212,7 +5229,7 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                                     break;
                             }
                         }
-                        else if (chainactive && PMember->GetMLevel() <= 50)
+                        else if (chainactive && memberlevel <= 50)
                         {
                             switch (PMember->expChain.chainNumber)
                             {
@@ -5239,7 +5256,7 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
                                     break;
                             }
                         }
-                        else if (chainactive && PMember->GetMLevel() <= 60)
+                        else if (chainactive && memberlevel <= 60)
                         {
                             switch (PMember->expChain.chainNumber)
                             {
@@ -5863,7 +5880,7 @@ void SaveCharPosition(CCharEntity* PChar)
 {
     TracyZoneScoped;
 
-    if (PChar->status == STATUS_TYPE::DISAPPEAR)
+    if (PChar->status == xi::Status::Disappear)
     {
         return;
     }
@@ -6786,7 +6803,7 @@ auto hasMogLockerAccess(const CCharEntity* PChar) -> bool
         {
             case 1: // All areas
                 // Allowed if in a zone with a Nomad Moogle or in your own Mog House
-                return curZone->CanUseMisc(MISC_MOGMENU) || PChar->m_moghouseID == PChar->id;
+                return curZone->CanUseMisc(xi::ZoneMisc::Mogmenu) || PChar->m_moghouseID == PChar->id;
             case 0: // Al Zahbi only
             default:
                 const auto zoneId = curZone->GetID();
@@ -6863,7 +6880,7 @@ void CheckUnarmedWeapon(CCharEntity* PChar)
     CItem* PSubslot = PChar->getEquip(SLOT_SUB);
 
     // Main or sub job provides H2H skill, and sub slot is empty.
-    if ((battleutils::GetSkillRank(SKILL_HAND_TO_HAND, PChar->GetMJob()) > 0 || battleutils::GetSkillRank(SKILL_HAND_TO_HAND, PChar->GetSJob()) > 0) &&
+    if ((battleutils::GetSkillRank(xi::SkillType::HandToHand, PChar->GetMJob()) > 0 || battleutils::GetSkillRank(xi::SkillType::HandToHand, PChar->GetSJob()) > 0) &&
         (!PSubslot || !PSubslot->isType(ITEM_EQUIPMENT)))
     {
         PChar->m_Weapons[SLOT_MAIN] = xi::items::unarmedH2H();
@@ -6988,7 +7005,7 @@ void RemoveStratagems(CCharEntity* PChar, CSpell* PSpell)
         {
             PChar->StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Accession);
         }
-        if (PSpell->getSkillType() == SKILL_ENHANCING_MAGIC)
+        if (PSpell->getSkillType() == xi::SkillType::EnhancingMagic)
         {
             PChar->StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Perpetuance);
         }
@@ -7206,7 +7223,9 @@ void AddPoints(CCharEntity* PChar, const char* type, int32 amount, int32 max)
     TracyZoneScoped;
 
     const auto currentPointsValue = GetPoints(PChar, type);
-    const auto newPointsValue     = std::clamp(currentPointsValue + amount, 0, max);
+    // 64-bit sum so amount can't overflow, and max is sanitized: callers (including Lua's
+    // addCurrency) can pass a non-positive cap, which would otherwise invert the clamp bounds.
+    const auto newPointsValue = static_cast<int32>(std::clamp<int64>(static_cast<int64>(currentPointsValue) + amount, 0, std::max(max, 0)));
     SetPoints(PChar, type, newPointsValue);
 
     if (strcmp(type, "unity_accolades") == 0 && amount > 0)
@@ -7363,7 +7382,7 @@ auto SendToZone(CCharEntity* PChar, uint16 zoneId) -> bool
     PChar->PSession->zone_ipp = {};
     PChar->pushPacket<GP_SERV_COMMAND_LOGOUT>(GP_GAME_LOGOUT_STATE::ZONECHANGE, IPP(ipp));
 
-    PChar->status = STATUS_TYPE::DISAPPEAR;
+    PChar->status = xi::Status::Disappear;
 
     // Save pet if any
     if (PChar->shouldPetPersistThroughZoning())
@@ -7382,7 +7401,7 @@ void SendDisconnect(CCharEntity* PChar)
     PChar->clearPacketList();
 
     PChar->loc.destination     = 0xFFFF;
-    PChar->status              = STATUS_TYPE::SHUTDOWN;
+    PChar->status              = xi::Status::Shutdown;
     PChar->requestedZoneChange = true;
 
     // Save pet if any
@@ -7403,7 +7422,7 @@ void ForceLogout(CCharEntity* PChar)
 void ForceRezone(CCharEntity* PChar)
 {
     PChar->loc.destination = PChar->getZone();
-    PChar->status          = STATUS_TYPE::DISAPPEAR;
+    PChar->status          = xi::Status::Disappear;
     PChar->loc.boundary    = 0;
 
     PChar->clearPacketList();
@@ -7445,7 +7464,7 @@ auto HomePoint(CCharEntity* PChar, bool resetHPMP) -> bool
     PChar->loc.p           = PChar->profile.home_point.p;
     PChar->loc.destination = PChar->profile.home_point.destination;
 
-    PChar->status    = STATUS_TYPE::DISAPPEAR;
+    PChar->status    = xi::Status::Disappear;
     PChar->animation = ANIMATION_NONE;
     PChar->updatemask |= UPDATE_HP;
 
@@ -8059,7 +8078,7 @@ void removeCharFromZone(CCharEntity* PChar)
         PChar->ClearTrusts();
     }
 
-    if (PChar->status == STATUS_TYPE::SHUTDOWN)
+    if (PChar->status == xi::Status::Shutdown)
     {
         if (PChar->PParty != nullptr)
         {
@@ -8126,7 +8145,7 @@ void removeCharFromZone(CCharEntity* PChar)
     charutils::SaveEminenceData(PChar);
     charutils::SaveLastLogout(PChar);
 
-    PChar->status = STATUS_TYPE::DISAPPEAR;
+    PChar->status = xi::Status::Disappear;
 }
 
 void updateSession(MapSession* PSession, CCharEntity* PChar, CZone* currentZone)

@@ -20,7 +20,6 @@
 */
 
 #include "attackround.h"
-#include "ai/ai_container.h"
 #include "items/item_weapon.h"
 #include "mob_modifier.h"
 #include "packets/s2c/0x01d_item_same.h"
@@ -183,7 +182,7 @@ bool CAttackRound::IsH2H()
 {
     if (auto* weapon = dynamic_cast<CItemWeapon*>(m_attacker->m_Weapons[SLOT_MAIN]))
     {
-        return weapon->getSkillType() == SKILL_HAND_TO_HAND;
+        return weapon->getSkillType() == xi::SkillType::HandToHand;
     }
     return false;
 }

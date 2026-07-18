@@ -26,10 +26,9 @@
 #include <memory>
 
 #include "entities/char_entity.h"
-#include "items/item_equipment.h"
-#include "zone.h"
 
-using Recalculate = xi::Flag<struct RecalculateTag>;
+using Recalculate       = xi::Flag<struct RecalculateTag>;
+using IncludeRecycleBin = xi::Flag<struct IncludeRecycleBinTag>;
 
 struct Charge_t;
 enum class MissionLog : uint8_t;
@@ -37,7 +36,6 @@ enum class QuestLog : uint8_t;
 enum class KeyItem : uint16_t;
 class CPetEntity;
 class CMobEntity;
-class CMeritPoints;
 class CAbility;
 class CItemWeapon;
 
@@ -100,6 +98,7 @@ EMobDifficulty CheckMob(uint8 charlvl, CBattleEntity* PMob);
 
 uint32 GetBaseExp(uint8 charlvl, int16 moblvl);
 uint32 GetExpNEXTLevel(uint8 charlvl);
+uint8  GetExpLevel(CBattleEntity* PMember);
 
 void DelExperiencePoints(CCharEntity* PChar, float retainpct, uint16 forcedXpLoss);
 void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob);
@@ -111,10 +110,10 @@ uint16 AddCapacityBonus(CCharEntity* PChar, uint16 capacityPoints);
 void   AddCapacityPoints(CCharEntity* PChar, CBaseEntity* PMob, uint32 capacityPoints, int16 levelDiff = 0, bool isCapacityChain = false);
 void   DistributeCapacityPoints(CCharEntity* PChar, CMobEntity* PMob);
 
-void  TrySkillUP(CCharEntity* PChar, SKILLTYPE SkillID, uint8 lvl, bool forceSkillUp = false, bool useSubSkill = false);
+void  TrySkillUP(CCharEntity* PChar, xi::SkillType SkillID, uint8 lvl, bool forceSkillUp = false, bool useSubSkill = false);
 void  TrackArrowUsageForScavenge(CCharEntity* PChar, CItemWeapon* PAmmo);
-bool  isArtsBonusActive(CCharEntity* PChar, SKILLTYPE SkillID);
-int16 ArtsBonusSkill(CCharEntity* PChar, SKILLTYPE SkillID);
+bool  isArtsBonusActive(CCharEntity* PChar, xi::SkillType SkillID);
+int16 ArtsBonusSkill(CCharEntity* PChar, xi::SkillType SkillID);
 void  BuildingCharSkillsTable(CCharEntity* PChar);
 void  BuildingCharWeaponSkills(CCharEntity* PChar);
 void  BuildingCharAbilityTable(CCharEntity* PChar);
@@ -125,7 +124,7 @@ void DoTrade(CCharEntity* PChar, CCharEntity* PTarget);
 bool CanTrade(CCharEntity* PChar, CCharEntity* PTarget);
 
 void   CheckWeaponSkill(CCharEntity* PChar, uint8 skill);
-bool   HasItem(CCharEntity* PChar, uint16 ItemID);
+bool   HasItem(CCharEntity* PChar, uint16 ItemID, IncludeRecycleBin includeRecycleBin = IncludeRecycleBin::Yes);
 uint32 getItemCount(CCharEntity* PChar, uint16 ItemID);
 auto   AddItem(CCharEntity* PChar, uint8 LocationID, std::unique_ptr<CItem> PItem, bool silence = false) -> uint8;
 uint8  AddItem(CCharEntity* PChar, uint8 LocationID, uint16 itemID, uint32 quantity = 1, bool silence = false);
@@ -144,6 +143,8 @@ void   CheckUnarmedWeapon(CCharEntity* PChar);
 void   SetStyleLock(CCharEntity* PChar, bool isStyleLocked);
 void   UpdateWeaponStyle(CCharEntity* PChar, uint8 equipSlotID, CItemEquipment* PItem);
 void   UpdateArmorStyle(CCharEntity* PChar, uint8 equipSlotID);
+auto   canEquipItemOnAnyJob(CCharEntity* PChar, const CItemEquipment* PItem) -> bool;
+auto   hasValidStyle(CCharEntity* PChar, const CItemEquipment* PItem, const CItemEquipment* AItem) -> bool;
 void   UpdateRemovedSlotsLookForLockStyle(CCharEntity* PChar);
 void   UpdateRemovedSlotsLook(CCharEntity* PChar);
 void   AddItemToRecycleBin(CCharEntity* PChar, uint32 container, uint8 slotID, uint8 quantity);

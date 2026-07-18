@@ -38,6 +38,10 @@ xi.settings.main =
     ENABLE_TVR       = 1,
     ENABLE_VOIDWATCH = 1, -- Not an expansion, but has its own storyline. (Not Implemented)
 
+    -- MOG HOUSE
+    ENABLE_MOG_HOUSE_2F = 1, -- Enables Access to Mog House 2F / Mog Safe 2.
+    ENABLE_MOG_GARDEN   = 1, -- Enables Access to Mog Garden, will send player to the area they entered from if disabled.
+
     -- FIELDS OF VALOR/Grounds of Valor settings
     ENABLE_FIELD_MANUALS  = 1, -- Enables Fields of Valor
     ENABLE_GROUNDS_TOMES  = 1, -- Enables Grounds of Valor
@@ -156,6 +160,7 @@ xi.settings.main =
     USE_ADOULIN_WEAPON_SKILL_CHANGES = true,  -- true/false. Change to toggle new Adoulin weapon skill damage calculations
     DISABLE_PARTY_EXP_PENALTY        = false, -- true/false.
     ENABLE_IMMUNOBREAK               = true,  -- true/false. Allow/Disallow immunobreaks to happen.
+    ENABLE_SMN_MAGIC_CAST_TIME_MERIT = true,  -- true/false. If false, the Summoning Magic Casting Time merit has no effect on cast time (pre-2012 behavior).
 
     -- TRUSTS
     ENABLE_TRUST_CASTING           = 1,
@@ -243,6 +248,7 @@ xi.settings.main =
     SNEAK_INVIS_DURATION_MULTIPLIER = 1,     -- multiplies duration of sneak, invis, deodorize to reduce player torture. 1 = retail behavior.
     USE_OLD_CURE_FORMULA            = false, -- true/false. if true, uses older cure formula (3*MND + VIT + 3*(healing skill/5)) // cure 6 will use the newer formula
     USE_OLD_MAGIC_DAMAGE            = false, -- true/false. if true, uses older magic damage formulas
+    USE_OLD_COUNTERSTANCE           = false, -- true/false. if true, Counterstance DEF = 1 + VIT/2 (+ Minne); gear/Protect ignored
 
     -- CELEBRATIONS
     EXPLORER_MOOGLE_LV              = 10, -- Enables Explorer Moogle teleports and sets required level. Zero to disable.
@@ -326,6 +332,7 @@ xi.settings.main =
     EQUIP_FROM_OTHER_CONTAINERS  = false, -- true/false. Allows equipping items from Mog Satchel, Sack, and Case. Only possible with the use of client addons.
     REGIME_REWARD_THRESHOLD      = 15,    -- If the player is more than N levels below the minimum suggested range, do not award experience.
     PERSIST_SEAL_TIMERS          = false, -- Persist seal (Beastmen/Kindred) recast timers across zone changes and logout.
+    GUILD_SHOP_HOLIDAYS          = false, -- true/false. Close each guild shop on its weekly holiday.
 
     -- SYSTEM
     DISABLE_INACTIVITY_WATCHDOG = false, -- true/false. If this is enabled, the watchdog which detects if the main loop isn't being ticked will no longer be able to kill the process.

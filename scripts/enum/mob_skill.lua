@@ -601,6 +601,8 @@ xi.mobSkill =
     GIGA_SCREAM_1                 =  923,
     DREAD_DIVE_1                  =  924,
 
+    STORMWIND                     =  926,
+
     DRILL_BRANCH_NM               =  927,
     PINECONE_BOMB_NM              =  928,
     LEAFSTORM_DISPEL              =  929,
@@ -703,6 +705,16 @@ xi.mobSkill =
 
     EES_YAGUDO                    = 1121,
     EES_QUADAV                    = 1122,
+
+    DYNAMIC_IMPLOSION             = 1127,
+    TRANSFUSION                   = 1128,
+    MANA_STORM                    = 1129,
+    DYNAMIC_ASSAULT               = 1130,
+    VIOLENT_RUPTURE               = 1131,
+    OBLIVION_SMASH_1              = 1132,
+    OBLIVION_SMASH_2              = 1133,
+    TERA_SLASH_1                  = 1134,
+    TERA_SLASH_2                  = 1135,
 
     EES_KINDRED                   = 1151,
 
@@ -883,7 +895,7 @@ xi.mobSkill =
     BAI_WING_2                    = 1411,
     ABSOLUTE_TERROR_7             = 1412,
     HORRID_ROAR_7                 = 1413,
-
+    MARIONETTE_DICE_1             = 1414,
     MARIONETTE_DICE_2             = 1415,
     MARIONETTE_DICE_3             = 1416,
     MARIONETTE_DICE_4             = 1417,
@@ -895,7 +907,7 @@ xi.mobSkill =
     MARIONETTE_DICE_10            = 1423,
     MARIONETTE_DICE_11            = 1424,
     MARIONETTE_DICE_12            = 1425,
-
+    MARIONETTE_DICE_13            = 1426,
     MARIONETTE_DICE_14            = 1427,
     WARCRY                        = 1428,
     COUNTERSTANCE_4               = 1429,

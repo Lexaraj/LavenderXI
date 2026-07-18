@@ -20,6 +20,7 @@
 */
 
 #include "mobskill_state.h"
+
 #include "action/action.h"
 #include "action/interrupts.h"
 #include "ai/ai_container.h"
@@ -28,6 +29,7 @@
 #include "entities/battle_entity.h"
 #include "entities/mob_entity.h"
 #include "enums/action/category.h"
+#include "enums/four_cc.h"
 #include "lua/luautils.h"
 #include "mobskill.h"
 #include "packets/s2c/0x028_battle2.h"
@@ -93,13 +95,20 @@ CMobSkillState::CMobSkillState(CBattleEntity* PEntity, uint16 targid, uint16 wsi
             PActionTarget = m_PEntity;
         }
 
+        auto targetID = PActionTarget ? PActionTarget->id : m_PEntity->id;
+
+        if (m_PEntity->objtype != TYPE_PC && settings::get<bool>("map.HIDE_READIES_TARGET"))
+        {
+            targetID = m_PEntity->id;
+        }
+
         action_t action{
             .actorId    = m_PEntity->id,
             .actiontype = ActionCategory::SkillStart,
             .actionid   = static_cast<uint32_t>(FourCC::SkillUse),
             .targets    = {
                 {
-                    .actorId = PActionTarget ? PActionTarget->id : m_PEntity->id,
+                    .actorId = targetID,
                     .results = {
                         {
                             .param     = m_PSkill->getID(),
@@ -216,7 +225,7 @@ bool CMobSkillState::Update(timer::time_point tick)
     if (IsCompleted() && tick > m_finishTime)
     {
         auto* PTarget = GetTarget();
-        if (m_skillSuccess && PTarget && PTarget->objtype == TYPE_MOB && PTarget != m_PEntity && m_PEntity->allegiance == ALLEGIANCE_TYPE::PLAYER)
+        if (m_skillSuccess && PTarget && PTarget->objtype == TYPE_MOB && PTarget != m_PEntity && m_PEntity->allegiance == xi::Allegiance::Player)
         {
             bool withMaster = m_PEntity->objtype == TYPE_PET || (m_PEntity->objtype == TYPE_MOB && m_PEntity->isCharmed);
             static_cast<CMobEntity*>(PTarget)->PEnmityContainer->UpdateEnmity(m_PEntity, 0, 0, withMaster);

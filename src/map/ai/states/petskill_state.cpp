@@ -20,11 +20,13 @@
 */
 
 #include "petskill_state.h"
+
 #include "action/action.h"
 #include "action/interrupts.h"
 #include "ai/ai_container.h"
 #include "enmity_container.h"
 #include "entities/pet_entity.h"
+#include "enums/four_cc.h"
 #include "packets/s2c/0x028_battle2.h"
 #include "petskill.h"
 #include "status_effect_container.h"
@@ -65,6 +67,13 @@ CPetSkillState::CPetSkillState(CPetEntity* PEntity, uint16 targid, uint16 wsid)
 
     m_castTime = m_PSkill->getActivationTime();
 
+    auto targetID = PTarget->id;
+
+    if (m_PEntity->objtype != TYPE_PC && settings::get<bool>("map.HIDE_READIES_TARGET"))
+    {
+        targetID = m_PEntity->id;
+    }
+
     if (m_castTime > 0s)
     {
         action_t action{
@@ -73,7 +82,7 @@ CPetSkillState::CPetSkillState(CPetEntity* PEntity, uint16 targid, uint16 wsid)
             .actionid   = static_cast<uint32_t>(FourCC::SkillUse),
             .targets    = {
                 {
-                    .actorId = PTarget->id,
+                    .actorId = targetID,
                     .results = {
                         {
                             .param     = m_PSkill->getMobSkillID() > 0 ? m_PSkill->getMobSkillID() : m_PSkill->getID(),

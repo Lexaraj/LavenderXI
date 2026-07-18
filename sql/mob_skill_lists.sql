@@ -1608,8 +1608,10 @@ INSERT INTO `mob_skill_lists` VALUES ('DynamisLord',361,1128);
 INSERT INTO `mob_skill_lists` VALUES ('DynamisLord',361,1129);
 INSERT INTO `mob_skill_lists` VALUES ('DynamisLord',361,1130);
 INSERT INTO `mob_skill_lists` VALUES ('DynamisLord',361,1131);
+INSERT INTO `mob_skill_lists` VALUES ('DynamisLord',361,1132);
 INSERT INTO `mob_skill_lists` VALUES ('DynamisLord',361,1133);
 INSERT INTO `mob_skill_lists` VALUES ('DynamisLord',361,1134);
+INSERT INTO `mob_skill_lists` VALUES ('DynamisLord',361,1135);
 INSERT INTO `mob_skill_lists` VALUES ('Killer_Jonny',362,408); -- sound_vacuum
 INSERT INTO `mob_skill_lists` VALUES ('Automaton_Harlequin',363,1943);
 INSERT INTO `mob_skill_lists` VALUES ('Automaton_Harlequin',363,2067);
@@ -2299,7 +2301,9 @@ INSERT INTO `mob_skill_lists` VALUES ('Cryptonberry_COP',500,785); -- Light of P
 INSERT INTO `mob_skill_lists` VALUES ('Cryptonberry_COP',500,786); -- Lateral Slash
 INSERT INTO `mob_skill_lists` VALUES ('Cryptonberry_COP',500,787); -- Vertical Slash
 INSERT INTO `mob_skill_lists` VALUES ('Cryptonberry_COP',500,788); -- Throat Stab
--- 501 free
+INSERT INTO `mob_skill_lists` VALUES ('Son_of_Anansi',501,959); -- Sickle Slash
+INSERT INTO `mob_skill_lists` VALUES ('Son_of_Anansi',501,960); -- Acid Spray
+INSERT INTO `mob_skill_lists` VALUES ('Son_of_Anansi',501,961); -- Spider Web
 -- 502 free
 INSERT INTO `mob_skill_lists` VALUES ('Mammet',503,347);
 INSERT INTO `mob_skill_lists` VALUES ('Mammet',503,419);
