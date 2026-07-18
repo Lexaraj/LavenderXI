@@ -314,12 +314,12 @@ xi.trust.canCast = function(caster, spell, notAllowedTrustIds)
         return -1
     end
 
-    -- Block summoning trusts if someone recently joined party (120s)
-    local lastPartyMemberAddedTime = caster:getPartyLastMemberJoinedTime()
-    if GetSystemTime() - lastPartyMemberAddedTime < 120 then
-        caster:messageSystem(xi.msg.system.TRUST_DELAY_NEW_PARTY_MEMBER)
-        return -1
-    end
+--   -- Block summoning trusts if someone recently joined party (120s)
+--    local lastPartyMemberAddedTime = caster:getPartyLastMemberJoinedTime()
+--    if GetSystemTime() - lastPartyMemberAddedTime < 120 then
+--        caster:messageSystem(xi.msg.system.TRUST_DELAY_NEW_PARTY_MEMBER)
+--        return -1
+--    end
 
     -- Trusts cannot be summoned if you have hate
     if caster:hasEnmity() then
@@ -382,14 +382,14 @@ xi.trust.canCast = function(caster, spell, notAllowedTrustIds)
         return xi.msg.basic.TRUST_NO_CAST_TRUST
     end
 
-    -- Limits set by ROV Key Items
-    if numTrusts >= 3 and not caster:hasKeyItem(xi.ki.RHAPSODY_IN_WHITE) then
-        caster:messageSystem(xi.msg.system.TRUST_MAXIMUM_NUMBER)
-        return -1
-    elseif numTrusts >= 4 and not caster:hasKeyItem(xi.ki.RHAPSODY_IN_CRIMSON) then
-        caster:messageSystem(xi.msg.system.TRUST_MAXIMUM_NUMBER)
-        return -1
-    end
+--    -- Limits set by ROV Key Items
+--    if numTrusts >= 3 and not caster:hasKeyItem(xi.ki.RHAPSODY_IN_WHITE) then
+--        caster:messageSystem(xi.msg.system.TRUST_MAXIMUM_NUMBER)
+--        return -1
+--    elseif numTrusts >= 4 and not caster:hasKeyItem(xi.ki.RHAPSODY_IN_CRIMSON) then
+--        caster:messageSystem(xi.msg.system.TRUST_MAXIMUM_NUMBER)
+--        return -1
+--    end
 
     if not xi.trust.checkBattlefieldTrustCount(caster) then
         return xi.msg.basic.TRUST_NO_CAST_TRUST
@@ -401,10 +401,10 @@ end
 xi.trust.spawn = function(caster, spell)
     caster:spawnTrust(spell:getID())
 
-    -- Records of Eminence: Call Forth an Alter Ego
-    if caster:getEminenceProgress(932) then
-        xi.roe.onRecordTrigger(caster, 932)
-    end
+--    -- Records of Eminence: Call Forth an Alter Ego
+--    if caster:getEminenceProgress(932) then
+--        xi.roe.onRecordTrigger(caster, 932)
+--    end
 
     return 0
 end

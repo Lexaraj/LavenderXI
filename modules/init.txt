@@ -37,14 +37,28 @@
 # Live example:
 
 # Sql things first
+
+rov/sql
+soa/sql
+abyssea/sql
+wotg/sql
 phoenix/sql
 phoenix/dynamis/sql
+lavender/sql
 
 custom/commands/
 custom/lua/garrison_placeholder_data.lua
 custom/lua/quest_workarounds.lua
 custom/lua/test_npcs_in_gm_home.lua
-era/
+era/lua
+rov/lua
+soa/lua
+abyssea/lua
+wotg/lua
+wotg/lua/weaponskills
+custom/cpp/ah_pagination.cpp
+lavender/lua
+lavender/cpp
 
 # Phoenix modules
 phoenix/cpp
