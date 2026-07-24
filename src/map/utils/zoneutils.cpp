@@ -27,6 +27,7 @@
 #include "campaign_system.h"
 #include "common/logging.h"
 #include "conquest_system.h"
+#include "data/enums/mob_mod.h"
 #include "data/enums/weather.h"
 #include "entities/mob_entity.h"
 #include "entities/npc_entity.h"
@@ -34,7 +35,6 @@
 #include "itemutils.h"
 #include "lua/luautils.h"
 #include "map_networking.h"
-#include "mob_modifier.h"
 #include "mob_spell_list.h"
 #include "mobutils.h"
 #include "spawn_handler.h"
@@ -112,6 +112,12 @@ auto GetZone(uint16 zoneId) -> CZone*
     }
 
     return nullptr;
+}
+
+auto GetInstanceByRunId(const uint16 zoneId, const uint32 runId) -> CInstance*
+{
+    auto* PZoneInstance = dynamic_cast<CZoneInstance*>(GetZone(zoneId));
+    return PZoneInstance ? PZoneInstance->getInstanceByRunId(runId) : nullptr;
 }
 
 auto GetEntity(const uint32 id, const uint8 filter) -> CBaseEntity*
@@ -338,7 +344,7 @@ auto LoadNPCList(Scheduler& scheduler, const std::vector<uint16>& zoneIds) -> Ta
                                     PNpc->baseSpeed      = rset->get<uint8>("speed");    // Overwrites baseentity.cpp's defined baseSpeed
                                     PNpc->UpdateSpeed();
 
-                                    PNpc->animation    = rset->get<uint8>("animation");
+                                    PNpc->animation    = rset->get<xi::Animation>("animation");
                                     PNpc->animationsub = rset->get<uint8>("animationsub");
 
                                     PNpc->namevis = rset->get<xi::NameVis>("namevis");
@@ -418,7 +424,7 @@ auto LoadMOBList(Scheduler& scheduler, const std::vector<uint16>& zoneIds) -> Ta
                                            "slash_sdt, pierce_sdt, h2h_sdt, impact_sdt, "
                                            "magical_sdt, fire_sdt, ice_sdt, wind_sdt, earth_sdt, lightning_sdt, water_sdt, light_sdt, dark_sdt, "
                                            "fire_res_rank, ice_res_rank, wind_res_rank, earth_res_rank, lightning_res_rank, water_res_rank, light_res_rank, dark_res_rank, "
-                                           "paralyze_res_rank, bind_res_rank, silence_res_rank, slow_res_rank, poison_res_rank, light_sleep_res_rank, dark_sleep_res_rank, blind_res_rank, "
+                                           "paralyze_res_rank, bind_res_rank, silence_res_rank, slow_res_rank, poison_res_rank, light_sleep_res_rank, dark_sleep_res_rank, blind_res_rank, stun_res_rank, gravity_res_rank, "
                                            "Element, mob_pools.speciesid, mob_species_system.familyID, name_prefix, entityFlags, animationsub, "
                                            "(mob_species_system.HP / 100), (mob_species_system.MP / 100), spellList, mob_groups.poolid, "
                                            "allegiance, namevis, aggro, roamflag, mob_pools.skill_list_id, mob_pools.true_detection, mob_species_system.detects, "
@@ -556,6 +562,8 @@ auto LoadMOBList(Scheduler& scheduler, const std::vector<uint16>& zoneIds) -> Ta
                                     PMob->setModifier(Mod::LIGHT_SLEEP_RES_RANK, rset->get<int8>("light_sleep_res_rank"));
                                     PMob->setModifier(Mod::DARK_SLEEP_RES_RANK, rset->get<int8>("dark_sleep_res_rank"));
                                     PMob->setModifier(Mod::BLIND_RES_RANK, rset->get<int8>("blind_res_rank"));
+                                    PMob->setModifier(Mod::STUN_RES_RANK, rset->get<int8>("stun_res_rank"));
+                                    PMob->setModifier(Mod::GRAVITY_RES_RANK, rset->get<int8>("gravity_res_rank"));
 
                                     PMob->m_Element     = rset->get<uint8>("Element");
                                     PMob->m_Species     = rset->get<uint16>("speciesid");
@@ -581,7 +589,7 @@ auto LoadMOBList(Scheduler& scheduler, const std::vector<uint16>& zoneIds) -> Ta
 
                                     if (PMob->animationsub != 0)
                                     {
-                                        PMob->setMobMod(MOBMOD_SPAWN_ANIMATIONSUB, PMob->animationsub);
+                                        PMob->setMobMod(xi::MobMod::SpawnAnimationsub, PMob->animationsub);
                                     }
 
                                     // Setup HP / MP Stat Percentage Boost
@@ -602,9 +610,9 @@ auto LoadMOBList(Scheduler& scheduler, const std::vector<uint16>& zoneIds) -> Ta
                                     PMob->m_MobSkillList = rset->get<uint16>("skill_list_id");
 
                                     PMob->m_TrueDetection = rset->get<bool>("true_detection");
-                                    PMob->setMobMod(MOBMOD_DETECTION, rset->get<uint16>("detects"));
+                                    PMob->setMobMod(xi::MobMod::Detection, rset->get<uint16>("detects"));
 
-                                    PMob->setMobMod(MOBMOD_CHARMABLE, rset->get<uint16>("charmable"));
+                                    PMob->setMobMod(xi::MobMod::Charmable, rset->get<uint16>("charmable"));
 
                                     // Add mob to spawn slot if it has one
                                     uint32 slotId      = rset->getOrDefault<uint32>("spawnslotid", 0);
@@ -630,7 +638,7 @@ auto LoadMOBList(Scheduler& scheduler, const std::vector<uint16>& zoneIds) -> Ta
                                         (PMob->m_Type & xi::MobType::Notorious) != xi::MobType::Normal ||
                                         (zoneType & xi::ZoneType::Dynamis) != xi::ZoneType::Unknown)
                                     {
-                                        PMob->setMobMod(MOBMOD_CHARMABLE, 0);
+                                        PMob->setMobMod(xi::MobMod::Charmable, 0);
                                     }
 
                                     // must be here first to define mobmods
@@ -828,6 +836,12 @@ auto LoadZones(Scheduler& scheduler, MapConfig config, const std::vector<uint16>
         {
             luautils::OnZoneInitialize(g_PZoneList[zoneId]->GetID());
         }
+    }
+
+    // Start zone timers after all entities are loaded
+    for (auto zoneId : zonesIdsToLoad)
+    {
+        g_PZoneList[zoneId]->createZoneTimers();
     }
 }
 

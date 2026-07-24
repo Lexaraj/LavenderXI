@@ -46,8 +46,8 @@
 #include "ai/controllers/pet_controller.h"
 #include "ai/states/ability_state.h"
 
+#include "data/enums/mob_mod.h"
 #include "enums/automaton.h"
-#include "mob_modifier.h"
 #include "packets/char_status.h"
 #include "packets/entity_update.h"
 #include "packets/pet_sync.h"
@@ -92,7 +92,7 @@ void LoadPetList()
                        "slash_sdt, pierce_sdt, h2h_sdt, impact_sdt, "
                        "magical_sdt, fire_sdt, ice_sdt, wind_sdt, earth_sdt, lightning_sdt, water_sdt, light_sdt, dark_sdt, "
                        "fire_res_rank, ice_res_rank, wind_res_rank, earth_res_rank, lightning_res_rank, water_res_rank, light_res_rank, dark_res_rank, "
-                       "paralyze_res_rank, bind_res_rank, silence_res_rank, slow_res_rank, poison_res_rank, light_sleep_res_rank, dark_sleep_res_rank, blind_res_rank, "
+                       "paralyze_res_rank, bind_res_rank, silence_res_rank, slow_res_rank, poison_res_rank, light_sleep_res_rank, dark_sleep_res_rank, blind_res_rank, stun_res_rank, gravity_res_rank, "
                        "cmbDelay, name_prefix, mob_pools.skill_list_id, damageType, "
                        "mob_pools.modelSize, mob_pools.modelHitboxSize "
                        "FROM pet_list, mob_pools, mob_resistances, mob_species_system "
@@ -173,6 +173,8 @@ void LoadPetList()
         Pet->light_sleep_res_rank = rset->get<int8>("light_sleep_res_rank");
         Pet->dark_sleep_res_rank  = rset->get<int8>("dark_sleep_res_rank");
         Pet->blind_res_rank       = rset->get<int8>("blind_res_rank");
+        Pet->stun_res_rank        = rset->get<int8>("stun_res_rank");
+        Pet->gravity_res_rank     = rset->get<int8>("gravity_res_rank");
 
         Pet->cmbDelay       = rset->get<uint16>("cmbDelay");
         Pet->name_prefix    = rset->get<uint8>("name_prefix");
@@ -1028,7 +1030,7 @@ void CalculateWyvernStats(CBattleEntity* PMaster, CPetEntity* PPet)
     PPet->setModifier(Mod::SUBTLE_BLOW, 40);
 
     // Wyverns can parry... yes really.
-    PPet->setMobMod(MOBMOD_CAN_PARRY, 1);
+    PPet->setMobMod(xi::MobMod::CanParry, 1);
 
     // Job Point: Wyvern Max HP
     if (PMaster->objtype == TYPE_PC)
@@ -1371,6 +1373,8 @@ void SpawnMobPet(CBattleEntity* PMaster, uint32 PetID)
         PPet->setModifier(Mod::LIGHT_SLEEP_RES_RANK, petData->light_sleep_res_rank);
         PPet->setModifier(Mod::DARK_SLEEP_RES_RANK, petData->dark_sleep_res_rank);
         PPet->setModifier(Mod::BLIND_RES_RANK, petData->blind_res_rank);
+        PPet->setModifier(Mod::STUN_RES_RANK, petData->stun_res_rank);
+        PPet->setModifier(Mod::GRAVITY_RES_RANK, petData->gravity_res_rank);
 
         PPet->savePetModifiers();
     }
@@ -1412,7 +1416,7 @@ void DetachPet(CBattleEntity* PMaster)
             {
                 PMob->PEnmityContainer->UpdateEnmity(PChar, 0, 0);
                 // need to set battle target to prevent mob enmity clear if in attack state when uncharming
-                PMob->SetBattleTargetID(PChar->targid);
+                PMob->setBattleTarget(PChar->entityId());
             }
             else
             {
@@ -1428,7 +1432,7 @@ void DetachPet(CBattleEntity* PMaster)
             if ((state && state->GetAbility()->getID() == ABILITY_LEAVE) || PChar->isDead())
             {
                 PMob->PEnmityContainer->Clear();
-                PMob->SetBattleTargetID(0);
+                PMob->setBattleTarget(std::nullopt);
                 PMob->m_OwnerID.clean();
                 PMob->updatemask |= UPDATE_STATUS;
             }
@@ -1444,7 +1448,7 @@ void DetachPet(CBattleEntity* PMaster)
         PMob->charmTime  = timer::time_point::min();
         PMob->PMaster    = nullptr;
 
-        PMob->setMobMod(MOBMOD_BODYGUARD, 0);
+        PMob->setMobMod(xi::MobMod::Bodyguard, 0);
 
         PMob->PAI->SetController(std::make_unique<CMobController>(PMob));
 

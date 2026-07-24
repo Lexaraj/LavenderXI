@@ -66,6 +66,7 @@
 #include "ability.h"
 #include "alliance.h"
 #include "conquest_system.h"
+#include "data/enums/mob_mod.h"
 #include "grades.h"
 #include "ipc_client.h"
 #include "item_container.h"
@@ -73,7 +74,6 @@
 #include "latent_effect_container.h"
 #include "linkshell.h"
 #include "map_networking.h"
-#include "mob_modifier.h"
 #include "nominate_manager.h"
 #include "recast_container.h"
 #include "roe.h"
@@ -966,7 +966,7 @@ auto LoadChar(Scheduler& scheduler, MapConfig config, const uint32 charId) -> st
     // Order matters as this uses merits and JP gifts.
     puppetutils::LoadAutomaton(PChar);
 
-    PChar->animation = (HP == 0 ? ANIMATION_DEATH : ANIMATION_NONE);
+    PChar->animation = (HP == 0 ? xi::Animation::Death : xi::Animation::None);
 
     PChar->StatusEffectContainer->LoadStatusEffects();
 
@@ -1257,7 +1257,7 @@ void LoadEquip(CCharEntity* PChar)
                 uint8 LocationID = PLinkshell1->getLocationID();
                 PLinkshell1->setSubType(ITEM_UNLOCKED);
                 PChar->clearEquip(SLOT_LINK1);
-                db::preparedStmt("DELETE char_equip FROM char_equip WHERE charid = ? AND slotid = ? AND containerid = ? LIMIT 1",
+                db::preparedStmt("DELETE FROM char_equip WHERE charid = ? AND slotid = ? AND containerid = ? LIMIT 1",
                                  PChar->id,
                                  SlotID,
                                  LocationID);
@@ -1277,7 +1277,7 @@ void LoadEquip(CCharEntity* PChar)
                 uint8 LocationID = PLinkshell2->getLocationID();
                 PLinkshell2->setSubType(ITEM_UNLOCKED);
                 PChar->clearEquip(SLOT_LINK2);
-                db::preparedStmt("DELETE char_equip FROM char_equip WHERE charid = ? AND slotid = ? AND containerid = ? LIMIT 1",
+                db::preparedStmt("DELETE FROM char_equip WHERE charid = ? AND slotid = ? AND containerid = ? LIMIT 1",
                                  PChar->id,
                                  SlotID,
                                  LocationID);
@@ -2253,7 +2253,12 @@ void UnequipItem(CCharEntity* PChar, uint8 equipSlotID, Recalculate recalculate)
                     PChar->look.ranged = 0;
                 }
                 PChar->m_Weapons[SLOT_RANGED] = nullptr;
-                if (((CItemWeapon*)PItem)->getSkillType() != xi::SkillType::StringInstrument && ((CItemWeapon*)PItem)->getSkillType() != xi::SkillType::WindInstrument)
+
+                // Instruments and Handbells being unequipped does not necessarily mean TP must be reset.
+                // The incoming item (or lack of) decides it.
+                const auto rangedSkill        = static_cast<CItemWeapon*>(PItem)->getSkillType();
+                const bool isRangedInstrument = rangedSkill == xi::SkillType::StringInstrument || rangedSkill == xi::SkillType::WindInstrument || rangedSkill == xi::SkillType::Handbell;
+                if (recalculate || !isRangedInstrument)
                 {
                     PChar->health.tp = 0;
                     PChar->StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Aftermath);
@@ -3345,6 +3350,8 @@ void EquipItem(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 contai
         }
     }
 
+    bool equipSucceeded = false;
+
     if (slotID == 0)
     {
         CItemEquipment* PSubItem = PChar->getEquip(SLOT_SUB);
@@ -3362,6 +3369,8 @@ void EquipItem(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 contai
         {
             if (!PItem->isSubType(ITEM_LOCKED) && EquipArmor(PChar, slotID, equipSlotID, containerID))
             {
+                equipSucceeded = true;
+
                 if (PItem->getScriptType() & SCRIPT_EQUIP)
                 {
                     PChar->m_EquipFlag |= PItem->getScriptType();
@@ -3408,10 +3417,16 @@ void EquipItem(CCharEntity* PChar, uint8 slotID, uint8 equipSlotID, uint8 contai
 
     if (equipSlotID == SLOT_MAIN || equipSlotID == SLOT_RANGED || equipSlotID == SLOT_SUB)
     {
-        if (!PItem || !PItem->isType(ITEM_EQUIPMENT) ||
-            (((CItemWeapon*)PItem)->getSkillType() != xi::SkillType::StringInstrument && ((CItemWeapon*)PItem)->getSkillType() != xi::SkillType::WindInstrument))
+        // Instruments and Handbells swapping keeps TP.
+        // The outgoing instruments should have saved the TP in UnequipItem before getting here.
+        const bool isRangedInstrument =
+            PItem && PItem->isType(ITEM_EQUIPMENT) &&
+            (static_cast<CItemWeapon*>(PItem)->getSkillType() == xi::SkillType::StringInstrument ||
+             static_cast<CItemWeapon*>(PItem)->getSkillType() == xi::SkillType::WindInstrument ||
+             static_cast<CItemWeapon*>(PItem)->getSkillType() == xi::SkillType::Handbell);
+
+        if (equipSucceeded && !isRangedInstrument)
         {
-            // If the weapon ISN'T a wind based instrument or a string based instrument
             PChar->health.tp = 0;
             PChar->StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Aftermath);
         }
@@ -5038,9 +5053,9 @@ void DistributeExperiencePoints(CCharEntity* PChar, CMobEntity* PMob)
 
                     exp *= GetPlayerShareMultiplier(pcinzone, isInSignetZone || isInSanctionZone);
 
-                    if (PMob->getMobMod(MOBMOD_EXP_BONUS))
+                    if (PMob->getMobMod(xi::MobMod::ExpBonus))
                     {
-                        const float monsterbonus = 1.0f + PMob->getMobMod(MOBMOD_EXP_BONUS) / 100.0f;
+                        const float monsterbonus = 1.0f + PMob->getMobMod(xi::MobMod::ExpBonus) / 100.0f;
                         exp *= monsterbonus;
                     }
 
@@ -5549,6 +5564,11 @@ void DelExperiencePoints(CCharEntity* PChar, float retainPercent, uint16 forcedX
 
     uint8  mLevel  = (PChar->m_LevelRestriction != 0 && PChar->m_LevelRestriction < PChar->GetMLevel()) ? PChar->m_LevelRestriction : PChar->GetMLevel();
     uint16 exploss = mLevel <= 67 ? (GetExpNEXTLevel(mLevel) * 8) / 100 : 2400;
+
+    if (mLevel <= 24 && settings::get<bool>("map.USE_PRE_ABYSSEA_EXP_LOSS_TIERS"))
+    {
+        exploss = (GetExpNEXTLevel(mLevel) * 10) / 100;
+    }
 
     if (forcedXpLoss > 0)
     {
@@ -7377,7 +7397,7 @@ auto SendToZone(CCharEntity* PChar, uint16 zoneId) -> bool
     }
 
     PChar->requestedZoneChange = true;
-    PChar->requestedWarp       = false; // a previous warp can get us here, which could infinitely loop. So un-request warp.
+    PChar->requestedWarp       = WarpRequest::None; // a previous warp can get us here, which could infinitely loop. So un-request warp.
 
     PChar->PSession->zone_ipp = {};
     PChar->pushPacket<GP_SERV_COMMAND_LOGOUT>(GP_GAME_LOGOUT_STATE::ZONECHANGE, IPP(ipp));
@@ -7443,7 +7463,7 @@ auto HomePoint(CCharEntity* PChar, bool resetHPMP) -> bool
     if (zoneutils::IsZoneAtPlayerCap(PChar->profile.home_point.destination, PChar->m_GMlevel > 0))
     {
         PChar->pushPacket<GP_SERV_COMMAND_SYSTEMMES>(0, 0, MsgStd::CouldNotEnter);
-        PChar->requestedWarp = false;
+        PChar->requestedWarp = WarpRequest::None;
         return false;
     }
 
@@ -7465,7 +7485,7 @@ auto HomePoint(CCharEntity* PChar, bool resetHPMP) -> bool
     PChar->loc.destination = PChar->profile.home_point.destination;
 
     PChar->status    = xi::Status::Disappear;
-    PChar->animation = ANIMATION_NONE;
+    PChar->animation = xi::Animation::None;
     PChar->updatemask |= UPDATE_HP;
 
     PChar->clearPacketList();
@@ -8067,9 +8087,9 @@ void removeCharFromZone(CCharEntity* PChar)
 
     PChar->WideScanTarget = std::nullopt;
 
-    if (PChar->animation == ANIMATION_ATTACK)
+    if (PChar->animation == xi::Animation::Attack)
     {
-        PChar->animation = ANIMATION_NONE;
+        PChar->animation = xi::Animation::None;
         PChar->updatemask |= UPDATE_HP;
     }
 

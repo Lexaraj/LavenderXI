@@ -45,6 +45,7 @@
 #include "attack.h"
 #include "attackutils.h"
 #include "charutils.h"
+#include "data/enums/mob_mod.h"
 #include "data/enums/weather.h"
 #include "enmity_container.h"
 #include "entities/battle_entity.h"
@@ -56,7 +57,6 @@
 #include "items.h"
 #include "items/item_weapon.h"
 #include "job_points.h"
-#include "mob_modifier.h"
 #include "mobskill.h"
 #include "modifier.h"
 #include "notoriety_container.h"
@@ -904,7 +904,7 @@ auto HandleSpikesDamage(CBattleEntity* PAttacker, CBattleEntity* PDefender, acti
     else if (Action->spikesEffect != ActionReactKind::None)
     {
         // check if spikes are handled in mobs script
-        if (PDefender->objtype == TYPE_MOB && static_cast<CMobEntity*>(PDefender)->getMobMod(MOBMOD_AUTO_SPIKES) > 0)
+        if (PDefender->objtype == TYPE_MOB && static_cast<CMobEntity*>(PDefender)->getMobMod(xi::MobMod::AutoSpikes) > 0)
         {
             luautils::OnSpikesDamage(PDefender, PAttacker, Action, Action->spikesParam);
         }
@@ -927,7 +927,7 @@ auto HandleSpikesDamage(CBattleEntity* PAttacker, CBattleEntity* PDefender, acti
             Action->spikesParam = static_cast<uint16>(spikesDamage);
         }
 
-        if (PDefender->objtype != TYPE_MOB || static_cast<CMobEntity*>(PDefender)->getMobMod(MOBMOD_AUTO_SPIKES) == 0)
+        if (PDefender->objtype != TYPE_MOB || static_cast<CMobEntity*>(PDefender)->getMobMod(xi::MobMod::AutoSpikes) == 0)
         {
             switch (static_cast<SPIKES>(Action->spikesEffect))
             {
@@ -1529,7 +1529,7 @@ void HandleEnspell(CBattleEntity* PAttacker, CBattleEntity* PDefender, action_re
             Action->addEffectMessage = MsgBasic::AddEffectRecoversHP;
         }
     }
-    else if ((PAttacker->objtype == TYPE_MOB || PAttacker->objtype == TYPE_PET) && static_cast<CMobEntity*>(PAttacker)->getMobMod(MOBMOD_ADD_EFFECT) > 0)
+    else if ((PAttacker->objtype == TYPE_MOB || PAttacker->objtype == TYPE_PET) && static_cast<CMobEntity*>(PAttacker)->getMobMod(xi::MobMod::AddEffect) > 0)
     {
         luautils::OnAdditionalEffect(PAttacker, PDefender, Action, finaldamage);
         if (Action->addEffectMessage == MsgBasic::AddEffectDamage && Action->addEffectParam < 0)
@@ -3420,14 +3420,6 @@ auto GetSkillChainEffect(const CBattleEntity* PDefender, uint8 primary, uint8 se
         return ActionProcSkillChain::None;
     }
 
-    Mod resistanceRankMods[] = { Mod::FIRE_RES_RANK, Mod::ICE_RES_RANK, Mod::WIND_RES_RANK, Mod::EARTH_RES_RANK, Mod::THUNDER_RES_RANK, Mod::ICE_RES_RANK, Mod::LIGHT_RES_RANK, Mod::DARK_RES_RANK };
-
-    // Reset the effects resistance rank mods
-    for (const auto& resistanceRank : resistanceRankMods)
-    {
-        PSCEffect->setMod(resistanceRank, 0);
-    }
-
     if (skillchain != SC_NONE)
     {
         PSCEffect->SetStartTime(timer::now());
@@ -3435,14 +3427,6 @@ auto GetSkillChainEffect(const CBattleEntity* PDefender, uint8 primary, uint8 se
         PSCEffect->SetTier(GetSkillchainTier(skillchain));
         PSCEffect->SetPower(skillchain);
         PSCEffect->SetSubPower(std::min(PSCEffect->GetSubPower() + 1, 5)); // Linked, limited to 5
-
-        // Set new resistance rank modifiers
-        // https://www.bg-wiki.com/ffxi/Resist#Modifying_Resistance_Rank
-        for (auto& element : GetSkillchainMagicElement(skillchain))
-        {
-            const Mod resistanceRankMod = GetResistanceRankModFromElement(element);
-            PSCEffect->setMod(resistanceRankMod, -1);
-        }
 
         return GetSkillchainSubeffect(skillchain);
     }
@@ -3483,22 +3467,6 @@ std::vector<ELEMENT> GetSkillchainMagicElement(SKILLCHAIN_ELEMENT skillchain)
     return resonanceToElement.at(skillchain);
 }
 
-Mod GetResistanceRankModFromElement(ELEMENT& element)
-{
-    static const HashMap<ELEMENT, Mod> elementToMod = {
-        { ELEMENT_FIRE, Mod::FIRE_RES_RANK },
-        { ELEMENT_WATER, Mod::WATER_RES_RANK },
-        { ELEMENT_WIND, Mod::WIND_RES_RANK },
-        { ELEMENT_EARTH, Mod::EARTH_RES_RANK },
-        { ELEMENT_THUNDER, Mod::THUNDER_RES_RANK },
-        { ELEMENT_ICE, Mod::ICE_RES_RANK },
-        { ELEMENT_LIGHT, Mod::LIGHT_RES_RANK },
-        { ELEMENT_DARK, Mod::DARK_RES_RANK },
-    };
-
-    return elementToMod.at(element);
-}
-
 auto TakeSkillchainDamage(CBattleEntity* PAttacker, CBattleEntity* PDefender, int32 lastSkillDamage, CBattleEntity* taChar) -> int32
 {
     if (PAttacker == nullptr || PDefender == nullptr)
@@ -3519,9 +3487,9 @@ auto TakeSkillchainDamage(CBattleEntity* PAttacker, CBattleEntity* PDefender, in
     {
         case TYPE_PC:
         {
-            if (PDefender->animation == ANIMATION_SIT || (PDefender->animation >= ANIMATION_SITCHAIR_0 && PDefender->animation <= ANIMATION_SITCHAIR_10))
+            if (PDefender->animation == xi::Animation::Sit || (PDefender->animation >= xi::Animation::Sitchair0 && PDefender->animation <= xi::Animation::Sitchair10))
             {
-                PDefender->animation = ANIMATION_NONE;
+                PDefender->animation = xi::Animation::None;
                 PDefender->updatemask |= UPDATE_HP;
             }
             break;
@@ -3581,20 +3549,20 @@ void MakeEntityStandUp(CBattleEntity* PEntity)
     {
         CCharEntity* PPlayer = ((CCharEntity*)PEntity);
 
-        if (PPlayer->animation == ANIMATION_HEALING)
+        if (PPlayer->animation == xi::Animation::Healing)
         {
             PPlayer->StatusEffectContainer->DelStatusEffect(xi::StatusEffect::Healing);
             PPlayer->updatemask |= UPDATE_HP;
         }
-        else if (PPlayer->animation == ANIMATION_SIT || (PPlayer->animation >= ANIMATION_SITCHAIR_0 && PPlayer->animation <= ANIMATION_SITCHAIR_10))
+        else if (PPlayer->animation == xi::Animation::Sit || (PPlayer->animation >= xi::Animation::Sitchair0 && PPlayer->animation <= xi::Animation::Sitchair10))
         {
-            PPlayer->animation = ANIMATION_NONE;
+            PPlayer->animation = xi::Animation::None;
             PPlayer->updatemask |= UPDATE_HP;
 
             CPetEntity* PPet = dynamic_cast<CPetEntity*>(PPlayer->PPet);
             if (PPet && (PPet->getPetType() == PET_TYPE::WYVERN || PPet->getPetType() == PET_TYPE::AUTOMATON))
             {
-                PPet->animation = ANIMATION_NONE;
+                PPet->animation = xi::Animation::None;
                 PPet->updatemask |= UPDATE_HP;
             }
         }
@@ -4134,7 +4102,7 @@ void applyCharm(CBattleEntity* PCharmer, CBattleEntity* PVictim, timer::duration
         PCharmer->PPet->charmTime = timer::now() + charmTime;
 
         // this will make him transition back to roaming if sleeping
-        PCharmer->PPet->animation = ANIMATION_NONE;
+        PCharmer->PPet->animation = xi::Animation::None;
         PCharmer->updatemask |= UPDATE_HP;
 
         if (PChar)
@@ -4232,7 +4200,7 @@ void ClaimMob(CBattleEntity* PDefender, CBattleEntity* PAttacker, bool passing)
             mob->PEnmityContainer->UpdateEnmity(original, 0, 0, true, true);
         }
 
-        if (mob->getMobMod(MOBMOD_CLAIM_TYPE) == static_cast<int16>(xi::ClaimType::Unclaimable))
+        if (mob->getMobMod(xi::MobMod::ClaimType) == static_cast<int16>(xi::ClaimType::Unclaimable))
         {
             return;
         }
@@ -5689,7 +5657,7 @@ bool CanAffordSpell(CBattleEntity* PEntity, CSpell* PSpell, uint8 flags)
     // Special handling for mobs with NO_SPELL_COST modifier
     if (auto PMob = dynamic_cast<CMobEntity*>(PEntity))
     {
-        if (PMob->getMobMod(MOBMOD_NO_SPELL_COST) > 0)
+        if (PMob->getMobMod(xi::MobMod::NoSpellCost) > 0)
         {
             return true;
         }
