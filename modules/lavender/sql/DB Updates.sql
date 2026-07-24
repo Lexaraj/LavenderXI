@@ -82,7 +82,6 @@ UPDATE `xidb`.`item_basic` SET `stackSize`=12 WHERE  `itemid`=507;
 UPDATE `xidb`.`item_basic` SET `stackSize`=12 WHERE  `itemid`=508;
 UPDATE `xidb`.`item_basic` SET `stackSize`=12 WHERE  `itemid`=510;
 UPDATE `xidb`.`item_basic` SET `stackSize`=12 WHERE  `itemid`=511;
-UPDATE `xidb`.`zone_settings` SET `zoneip`='73.62.92.12' WHERE `zoneid`>= '0'
 UPDATE `xidb`.`spell_list` SET `recastTime`=5000 WHERE  `spellid`=977;
 UPDATE `xidb`.`spell_list` SET `recastTime`=5000 WHERE  `spellid`=955;
 UPDATE `xidb`.`spell_list` SET `recastTime`=5000 WHERE  `spellid`=1005;
@@ -90,3 +89,8 @@ UPDATE `xidb`.`spell_list` SET `recastTime`=5000 WHERE  `spellid`=917;
 UPDATE `xidb`.`spell_list` SET `recastTime`=5000 WHERE  `spellid`=910;
 UPDATE `xidb`.`spell_list` SET `recastTime`=5000 WHERE  `spellid`=975;
 UPDATE `xidb`.`spell_list` SET `recastTime`=5000 WHERE  `spellid`=964;
+INSERT INTO `mob_spell_lists` (`spell_list_name`, `spell_list_id`, `spell_id`, `min_level`, `max_level`) VALUES ('TRUST_Leorax', 5000, 338, 12, 255);
+INSERT INTO `mob_spell_lists` (`spell_list_name`, `spell_list_id`, `spell_id`, `min_level`, `max_level`) VALUES ('TRUST_Leorax', 5000, 339, 37, 255);
+UPDATE `xidb`.`mob_pools` SET `spellList`=5000 WHERE  `poolid`=5975;
+UPDATE `xidb`.`mob_pools` SET `mJob`=13 WHERE  `poolid`=5975;
+UPDATE `xidb`.`mob_pools` SET `sJob`=1 WHERE  `poolid`=5975;

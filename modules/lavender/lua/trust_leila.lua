@@ -30,8 +30,6 @@ m:addOverride("xi.actions.spells.trust.ayame_uc.onMobSpawn", function(mob)
 
     mob:setTrustTPSkillSettings(ai.tp.OPENER, ai.s.HIGHEST)
 	
-    mob:setMobMod(xi.mobMod.TRUST_DISTANCE, xi.trust.movementType.MELEE)
-	
 	mob:setAutoAttackEnabled(true)
 	
 end)

@@ -7,7 +7,6 @@ m:addOverride("xi.actions.spells.trust.iron_eater.onMobSpawn", function(mob)
     xi.trust.message(mob, xi.trust.messageOffset.SPAWN)	
 
     local lvl = mob:getMainLvl()
-	local TPV = mob:getTP()
 	
     if lvl >= 10 then
 		mob:addGambit(ai.t.MASTER, { ai.c.HPP_LT, 50 }, { ai.r.JA, ai.s.SPECIFIC, xi.ja.PROVOKE })
@@ -34,8 +33,6 @@ m:addOverride("xi.actions.spells.trust.iron_eater.onMobSpawn", function(mob)
     end	
 	
     mob:setTrustTPSkillSettings(ai.tp.CLOSER_UNTIL_TP, ai.s.HIGHEST, 3000)
-
-    mob:setMobMod(xi.mobMod.TRUST_DISTANCE, xi.trust.movementType.MELEE)
 	
 	mob:setAutoAttackEnabled(true)
 	

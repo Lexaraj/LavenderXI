@@ -14,7 +14,6 @@ m:addOverride("xi.actions.spells.trust.robel-akbel.onMobSpawn", function(mob)
 
     mob:setAutoAttackEnabled(false)
 
-    mob:setMobMod(xi.mobMod.TRUST_DISTANCE, xi.trust.movementType.MID_RANGE)
 end)
 
 return m
