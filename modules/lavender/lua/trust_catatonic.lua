@@ -33,8 +33,12 @@ m:addOverride("xi.actions.spells.trust.iron_eater.onMobSpawn", function(mob)
     end	
 	
     mob:setTrustTPSkillSettings(ai.tp.CLOSER_UNTIL_TP, ai.s.HIGHEST, 3000)
-	
+
+	mob:setMobMod(xi.mobMod.TRUST_NO_IDLE_GAMBITS, 1)
+
 	mob:setAutoAttackEnabled(true)
+	
+
 	
 end)
 

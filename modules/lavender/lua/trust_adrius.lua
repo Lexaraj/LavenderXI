@@ -57,6 +57,8 @@ m:addOverride("xi.actions.spells.trust.valaineral.onMobSpawn", function(mob)
     mob:setTrustTPSkillSettings(ai.tp.OPENER, ai.s.HIGHEST)
 
     mob:setMobMod(xi.mobMod.TRUST_DISTANCE, xi.trust.movementType.MELEE)
+	
+	mob:setMobMod(xi.mobMod.TRUST_NO_IDLE_GAMBITS, 1)
 
 	mob:setAutoAttackEnabled(true)	
 	

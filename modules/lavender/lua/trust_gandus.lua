@@ -12,6 +12,8 @@ m:addOverride("xi.actions.spells.trust.robel-akbel.onMobSpawn", function(mob)
 
     mob:addGambit(ai.t.TARGET, { ai.c.NOT_SC_AVAILABLE, 0 }, { ai.r.MA, ai.s.HIGHEST, xi.magic.spellFamily.NONE }, 20)
 
+	mob:setMobMod(xi.mobMod.TRUST_NO_IDLE_GAMBITS, 1)
+
     mob:setAutoAttackEnabled(false)
 
 end)

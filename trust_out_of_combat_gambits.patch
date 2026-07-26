@@ -1,0 +1,40 @@
+diff --git a/data/enums/mob_mod.yaml b/data/enums/mob_mod.yaml
+index 9cef7159..1d8225ba 100644
+--- a/data/enums/mob_mod.yaml
++++ b/data/enums/mob_mod.yaml
+@@ -105,3 +105,4 @@ values:
+   follow_stop_range:      95 # Distance the followers attempt to stop at once their leader stops moving. Applied to followers.
+   trust_shield_size:      96 # TRUSTS ONLY: Set the size of the mob's shield. 3 = Default size, only used for trusts that use shields.
+   bodyguard:              97 # Charmed mob defends its master similar to an avatar. (Maiden's Virelai)
++  trust_no_idle_gambits:  98 # TRUSTS ONLY: If non-zero, this Trust will NOT evaluate/use its gambits while fully out of combat (roam tick). Combat and non-combat-follow gambit ticks are unaffected.
+diff --git a/src/map/ai/controllers/trust_controller.cpp b/src/map/ai/controllers/trust_controller.cpp
+index caae0f1d..6ca96812 100644
+--- a/src/map/ai/controllers/trust_controller.cpp
++++ b/src/map/ai/controllers/trust_controller.cpp
+@@ -355,6 +355,7 @@ auto CTrustController::DoRoamTick(timer::time_point tick) -> Task<void>
+ {
+     TracyZoneScoped;
+ 
++    auto* PTrust               = static_cast<CTrustEntity*>(POwner);
+     auto* PMaster              = static_cast<CCharEntity*>(POwner->PMaster);
+     auto  masterLastAttackTime = static_cast<CPlayerController*>(PMaster->PAI->GetController())->getLastAttackTime();
+     bool  masterMeleeSwing     = masterLastAttackTime > timer::now() - 1s;
+@@ -452,6 +453,18 @@ auto CTrustController::DoRoamTick(timer::time_point tick) -> Task<void>
+         }
+     }
+ 
++    // Allow self/party-oriented gambits (buffs, cures, status removal, etc.) to fire while fully
++    // out of combat. Target-based gambit selectors resolve against GetBattleTarget(), which is
++    // null here, so enemy-oriented gambits simply won't find a target and no-op safely.
++    // Mirrors the same "don't cast while mid-reposition" guard DoNonCombatTick uses.
++    // Individual Trusts can opt out entirely via the TRUST_NO_IDLE_GAMBITS mob mod.
++    if (PTrust->getMobMod(xi::MobMod::TrustNoIdleGambits) == 0 && !POwner->PAI->PathFind->IsFollowingPath())
++    {
++        PTarget = PMaster->GetBattleTarget();
++        co_await m_GambitsContainer->Tick(tick);
++        POwner->PAI->EventHandler.triggerListener("COMBAT_TICK", POwner, PMaster, PTarget);
++    }
++
+     co_return;
+ }
+ 

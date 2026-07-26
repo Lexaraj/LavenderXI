@@ -355,6 +355,7 @@ auto CTrustController::DoRoamTick(timer::time_point tick) -> Task<void>
 {
     TracyZoneScoped;
 
+    auto* PTrust               = static_cast<CTrustEntity*>(POwner);
     auto* PMaster              = static_cast<CCharEntity*>(POwner->PMaster);
     auto  masterLastAttackTime = static_cast<CPlayerController*>(PMaster->PAI->GetController())->getLastAttackTime();
     bool  masterMeleeSwing     = masterLastAttackTime > timer::now() - 1s;
@@ -450,6 +451,18 @@ auto CTrustController::DoRoamTick(timer::time_point tick) -> Task<void>
             POwner->updatemask |= UPDATE_HP;
             m_NumHealingTicks = std::clamp(m_NumHealingTicks + 1, static_cast<std::size_t>(0U), m_tickDelays.size() - 1U);
         }
+    }
+
+    // Allow self/party-oriented gambits (buffs, cures, status removal, etc.) to fire while fully
+    // out of combat. Target-based gambit selectors resolve against GetBattleTarget(), which is
+    // null here, so enemy-oriented gambits simply won't find a target and no-op safely.
+    // Mirrors the same "don't cast while mid-reposition" guard DoNonCombatTick uses.
+    // Individual Trusts can opt out entirely via the TRUST_NO_IDLE_GAMBITS mob mod.
+    if (PTrust->getMobMod(xi::MobMod::TrustNoIdleGambits) == 0 && !POwner->PAI->PathFind->IsFollowingPath())
+    {
+        PTarget = PMaster->GetBattleTarget();
+        co_await m_GambitsContainer->Tick(tick);
+        POwner->PAI->EventHandler.triggerListener("COMBAT_TICK", POwner, PMaster, PTarget);
     }
 
     co_return;

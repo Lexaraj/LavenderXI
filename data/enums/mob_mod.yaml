@@ -105,3 +105,4 @@ values:
   follow_stop_range: 95 # Distance the followers attempt to stop at once their leader stops moving. Applied to followers.
   trust_shield_size: 96 # TRUSTS ONLY: Set the size of the mob's shield. 3 = Default size, only used for trusts that use shields.
   bodyguard: 97 # Charmed mob defends its master similar to an avatar. (Maiden's Virelai)
+  trust_no_idle_gambits: 98 # TRUSTS ONLY: If non-zero, this Trust will NOT evaluate/use its gambits while fully out of combat (roam tick). Combat and non-combat-follow gambit ticks are unaffected.

@@ -29,6 +29,8 @@ m:addOverride("xi.actions.spells.trust.ayame_uc.onMobSpawn", function(mob)
 	end
 
     mob:setTrustTPSkillSettings(ai.tp.OPENER, ai.s.HIGHEST)
+
+	mob:setMobMod(xi.mobMod.TRUST_NO_IDLE_GAMBITS, 1)
 	
 	mob:setAutoAttackEnabled(true)
 	

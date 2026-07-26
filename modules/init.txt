@@ -41,7 +41,7 @@
 rov/sql
 soa/sql
 abyssea/sql
-wotg/sql
+wotg/sql/2007_exp_tables.sql
 phoenix/sql
 phoenix/dynamis/sql
 lavender/sql
@@ -57,12 +57,10 @@ abyssea/lua
 wotg/lua
 wotg/lua/weaponskills
 custom/cpp/ah_pagination.cpp
+phoenix/cpp
 lavender/lua
 lavender/cpp
 
-# Phoenix modules
-phoenix/cpp
-phoenix/lua
 
 # Dynamis
 phoenix/dynamis/lua/
